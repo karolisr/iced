@@ -53,7 +53,7 @@ impl Default for Settings {
             antialiasing: true,
 
             #[cfg(target_os = "macos")]
-            allows_automatic_window_tabbing: true
+            allows_automatic_window_tabbing: true,
         }
     }
 }
