@@ -713,9 +713,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.2.26"
+version = "1.2.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "956a5e21988b87f372569b66183b78babf23ebc2e744b733e4350a752c4dafac"
+checksum = "d487aa071b5f64da6f19a3e848e3578944b726ee5a4854b82172f02aa876bfdc"
 dependencies = [
  "jobserver",
  "libc",
@@ -2040,7 +2040,7 @@ dependencies = [
  "log",
  "presser",
  "thiserror 1.0.69",
- "windows 0.57.0",
+ "windows 0.58.0",
 ]
 
 [[package]]
@@ -2209,15 +2209,6 @@ name = "hexf-parse"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
-
-[[package]]
-name = "home"
-version = "0.5.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "589533453244b0995c858700322199b2becb13b627df2851f64a2775d024abcf"
-dependencies = [
- "windows-sys 0.59.0",
-]
 
 [[package]]
 name = "http"
@@ -3029,9 +3020,9 @@ checksum = "03087c2bad5e1034e8cace5926dec053fb3790248370865f5117a7d0213354c8"
 
 [[package]]
 name = "libc"
-version = "0.2.172"
+version = "0.2.173"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d750af042f7ef4f724306de029d18836c26c1765a54a6a3f094cbd23a7267ffa"
+checksum = "d8cfeafaffdbc32176b64fb251369d52ea9f0a8fbc6f8759edffef7b525d64bb"
 
 [[package]]
 name = "libfuzzer-sys"
@@ -5454,9 +5445,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.102"
+version = "2.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6397daf94fa90f058bd0fd88429dd9e5738999cca8d701813c80723add80462"
+checksum = "e4307e30089d6fd6aff212f2da3a1f9e32f3223b1f010fb09b7c95f90f3ca1e8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5649,12 +5640,11 @@ dependencies = [
 
 [[package]]
 name = "thread_local"
-version = "1.1.8"
+version = "1.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b9ef9bad013ada3808854ceac7b46812a6465ba368859a37e2100283d2d719c"
+checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
 dependencies = [
  "cfg-if",
- "once_cell",
 ]
 
 [[package]]
@@ -6608,12 +6598,11 @@ dependencies = [
 
 [[package]]
 name = "webbrowser"
-version = "1.0.4"
+version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5df295f8451142f1856b1bd86a606dfe9587d439bc036e319c827700dbd555e"
+checksum = "aaf4f3c0ba838e82b4e5ccc4157003fb8c324ee24c058470ffb82820becbde98"
 dependencies = [
  "core-foundation 0.10.1",
- "home",
  "jni",
  "log",
  "ndk-context",
