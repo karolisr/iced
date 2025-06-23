@@ -298,7 +298,7 @@ where
                         label,
                         widget::text::Format {
                             width: self.width,
-                            height: Length::Shrink,
+                            height: Length::Fixed(self.size),
                             line_height: self.text_line_height,
                             size: self.text_size,
                             font: self.font,
