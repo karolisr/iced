@@ -944,12 +944,9 @@ where
 
                     shell.capture_event();
                 }
-                Event::Window(e) => match e {
-                    window::Event::RedrawRequested(_) => {
-                        should_notify_viewport = false
-                    }
-                    _ => {}
-                },
+                Event::Window(window::Event::RedrawRequested(_)) => {
+                    should_notify_viewport = false;
+                }
                 _ => {}
             }
 
