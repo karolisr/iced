@@ -78,3 +78,9 @@ impl Path {
         }
     }
 }
+
+impl From<lyon_path::Path> for Path {
+    fn from(raw: lyon_path::Path) -> Self {
+        Path { raw }
+    }
+}
