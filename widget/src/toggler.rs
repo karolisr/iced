@@ -553,7 +553,7 @@ pub fn default(theme: &Theme, status: Status) -> Style {
             if is_toggled {
                 palette.primary.base.color
             } else {
-                palette.background.strongest.color
+                palette.background.strong.color
             }
         }
         Status::Disabled => palette.background.weak.color,
@@ -577,7 +577,7 @@ pub fn default(theme: &Theme, status: Status) -> Style {
                 palette.background.weak.color
             }
         }
-        Status::Disabled => palette.background.base.color,
+        Status::Disabled => palette.background.weakest.color,
     };
 
     Style {
