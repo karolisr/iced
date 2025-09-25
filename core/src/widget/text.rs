@@ -55,7 +55,6 @@ pub use text::{Alignment, LineHeight, Shaping, Wrapping};
 ///         .into()
 /// }
 /// ```
-#[allow(missing_debug_implementations)]
 pub struct Text<'a, Theme, Renderer>
 where
     Theme: Catalog,
@@ -207,7 +206,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
@@ -245,7 +244,7 @@ where
     }
 
     fn operate(
-        &self,
+        &mut self,
         _state: &mut Tree,
         layout: Layout<'_>,
         _renderer: &Renderer,
@@ -441,7 +440,7 @@ pub fn primary(theme: &Theme) -> Style {
 /// Text conveying some secondary information, like a footnote.
 pub fn secondary(theme: &Theme) -> Style {
     Style {
-        color: Some(theme.extended_palette().secondary.strong.color),
+        color: Some(theme.extended_palette().secondary.base.color),
     }
 }
 
@@ -449,6 +448,13 @@ pub fn secondary(theme: &Theme) -> Style {
 pub fn success(theme: &Theme) -> Style {
     Style {
         color: Some(theme.palette().success),
+    }
+}
+
+/// Text conveying some mildly negative information, like a warning.
+pub fn warning(theme: &Theme) -> Style {
+    Style {
+        color: Some(theme.palette().warning),
     }
 }
 

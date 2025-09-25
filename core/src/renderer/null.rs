@@ -16,7 +16,7 @@ impl Renderer for () {
 
     fn end_transformation(&mut self) {}
 
-    fn clear(&mut self) {}
+    fn reset(&mut self, _new_bounds: Rectangle) {}
 
     fn fill_quad(
         &mut self,
@@ -31,7 +31,6 @@ impl text::Renderer for () {
     type Paragraph = ();
     type Editor = ();
 
-    const MONOSPACE_FONT: Font = Font::MONOSPACE;
     const ICON_FONT: Font = Font::DEFAULT;
     const CHECKMARK_ICON: char = '0';
     const ARROW_DOWN_ICON: char = '0';

@@ -9,7 +9,6 @@ use crate::core::widget::tree::{self, Tree};
 use crate::core::{
     self, Clipboard, Element, Length, Rectangle, Shell, Size, Vector, Widget,
 };
-use crate::runtime::overlay::Nested;
 
 use ouroboros::self_referencing;
 use std::cell::RefCell;
@@ -299,15 +298,15 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
         let t = tree.state.downcast_mut::<Rc<RefCell<Option<Tree>>>>();
 
-        self.with_element(|element| {
-            element.as_widget().layout(
+        self.with_element_mut(|element| {
+            element.as_widget_mut().layout(
                 &mut t.borrow_mut().as_mut().unwrap().children[0],
                 renderer,
                 limits,
@@ -378,7 +377,7 @@ where
     }
 
     fn operate(
-        &self,
+        &mut self,
         tree: &mut Tree,
         layout: Layout<'_>,
         renderer: &Renderer,
@@ -387,8 +386,8 @@ where
         self.rebuild_element_with_operation(layout, operation);
 
         let tree = tree.state.downcast_mut::<Rc<RefCell<Option<Tree>>>>();
-        self.with_element(|element| {
-            element.as_widget().operate(
+        self.with_element_mut(|element| {
+            element.as_widget_mut().operate(
                 &mut tree.borrow_mut().as_mut().unwrap().children[0],
                 layout,
                 renderer,
@@ -472,7 +471,9 @@ where
                                 viewport,
                                 translation,
                             )
-                            .map(|overlay| RefCell::new(Nested::new(overlay)))
+                            .map(|overlay| {
+                                RefCell::new(overlay::Nested::new(overlay))
+                            })
                     },
                 )
             },
@@ -519,7 +520,7 @@ struct Inner<'a, 'b, Message, Theme, Renderer, Event, S> {
 
     #[borrows(mut instance, mut tree)]
     #[not_covariant]
-    overlay: Option<RefCell<Nested<'this, Event, Theme, Renderer>>>,
+    overlay: Option<RefCell<overlay::Nested<'this, Event, Theme, Renderer>>>,
 }
 
 struct OverlayInstance<'a, 'b, Message, Theme, Renderer, Event, S> {
@@ -531,7 +532,7 @@ impl<Message, Theme, Renderer, Event, S>
 {
     fn with_overlay_maybe<T>(
         &self,
-        f: impl FnOnce(&mut Nested<'_, Event, Theme, Renderer>) -> T,
+        f: impl FnOnce(&mut overlay::Nested<'_, Event, Theme, Renderer>) -> T,
     ) -> Option<T> {
         self.overlay
             .as_ref()
@@ -546,7 +547,7 @@ impl<Message, Theme, Renderer, Event, S>
 
     fn with_overlay_mut_maybe<T>(
         &mut self,
-        f: impl FnOnce(&mut Nested<'_, Event, Theme, Renderer>) -> T,
+        f: impl FnOnce(&mut overlay::Nested<'_, Event, Theme, Renderer>) -> T,
     ) -> Option<T> {
         self.overlay
             .as_mut()

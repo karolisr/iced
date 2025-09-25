@@ -41,6 +41,9 @@ pub struct Quad {
 
     /// The shadow blur radius of the [`Quad`].
     pub shadow_blur_radius: f32,
+
+    /// Whether the [`Quad`] should be snapped to the pixel grid.
+    pub snap: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -300,6 +303,12 @@ impl Batch {
         self.solids.clear();
         self.gradients.clear();
         self.order.clear();
+    }
+
+    pub fn append(&mut self, batch: &mut Batch) {
+        self.solids.append(&mut batch.solids);
+        self.gradients.append(&mut batch.gradients);
+        self.order.append(&mut batch.order);
     }
 }
 

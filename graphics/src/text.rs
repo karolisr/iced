@@ -73,74 +73,32 @@ pub enum Text {
 impl Text {
     /// Returns the visible bounds of the [`Text`].
     pub fn visible_bounds(&self) -> Option<Rectangle> {
-        let (bounds, align_x, align_y) = match self {
+        match self {
             Text::Paragraph {
                 position,
                 paragraph,
                 clip_bounds,
                 transformation,
                 ..
-            } => (
-                Rectangle::new(*position, paragraph.min_bounds)
-                    .intersection(clip_bounds)
-                    .map(|bounds| bounds * *transformation),
-                paragraph.align_x,
-                Some(paragraph.align_y),
-            ),
+            } => Rectangle::new(*position, paragraph.min_bounds)
+                .intersection(clip_bounds)
+                .map(|bounds| bounds * *transformation),
             Text::Editor {
                 editor,
                 position,
                 clip_bounds,
                 transformation,
                 ..
-            } => (
-                Rectangle::new(*position, editor.bounds)
-                    .intersection(clip_bounds)
-                    .map(|bounds| bounds * *transformation),
-                Alignment::Default,
-                None,
-            ),
+            } => Rectangle::new(*position, editor.bounds)
+                .intersection(clip_bounds)
+                .map(|bounds| bounds * *transformation),
             Text::Cached {
                 bounds,
                 clip_bounds,
-                align_x: horizontal_alignment,
-                align_y: vertical_alignment,
                 ..
-            } => (
-                bounds.intersection(clip_bounds),
-                *horizontal_alignment,
-                Some(*vertical_alignment),
-            ),
-            Text::Raw { raw, .. } => {
-                (Some(raw.clip_bounds), Alignment::Default, None)
-            }
-        };
-
-        let mut bounds = bounds?;
-
-        match align_x {
-            Alignment::Default | Alignment::Left | Alignment::Justified => {}
-            Alignment::Center => {
-                bounds.x -= bounds.width / 2.0;
-            }
-            Alignment::Right => {
-                bounds.x -= bounds.width;
-            }
+            } => bounds.intersection(clip_bounds),
+            Text::Raw { raw, .. } => Some(raw.clip_bounds),
         }
-
-        if let Some(alignment) = align_y {
-            match alignment {
-                alignment::Vertical::Top => {}
-                alignment::Vertical::Center => {
-                    bounds.y -= bounds.height / 2.0;
-                }
-                alignment::Vertical::Bottom => {
-                    bounds.y -= bounds.height;
-                }
-            }
-        }
-
-        Some(bounds)
     }
 }
 
@@ -176,7 +134,6 @@ pub fn font_system() -> &'static RwLock<FontSystem> {
 }
 
 /// A set of system fonts.
-#[allow(missing_debug_implementations)]
 pub struct FontSystem {
     raw: cosmic_text::FontSystem,
     loaded_fonts: HashSet<usize>,
@@ -218,7 +175,7 @@ impl FontSystem {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Version(u32);
 
-/// A weak reference to a [`cosmic-text::Buffer`] that can be drawn.
+/// A weak reference to a [`cosmic_text::Buffer`] that can be drawn.
 #[derive(Debug, Clone)]
 pub struct Raw {
     /// A weak reference to a [`cosmic_text::Buffer`].
@@ -365,8 +322,15 @@ fn to_align(alignment: Alignment) -> Option<cosmic_text::Align> {
 }
 
 /// Converts some [`Shaping`] strategy to a [`cosmic_text::Shaping`] strategy.
-pub fn to_shaping(shaping: Shaping) -> cosmic_text::Shaping {
+pub fn to_shaping(shaping: Shaping, text: &str) -> cosmic_text::Shaping {
     match shaping {
+        Shaping::Auto => {
+            if text.is_ascii() {
+                cosmic_text::Shaping::Basic
+            } else {
+                cosmic_text::Shaping::Advanced
+            }
+        }
         Shaping::Basic => cosmic_text::Shaping::Basic,
         Shaping::Advanced => cosmic_text::Shaping::Advanced,
     }
