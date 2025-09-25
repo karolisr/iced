@@ -74,7 +74,7 @@ impl Example {
         }
     }
 
-    fn view(&self) -> Element<Message> {
+    fn view(&self) -> Element<'_, Message> {
         let border::Radius {
             top_left,
             top_right,
@@ -175,7 +175,7 @@ mod quad {
         }
 
         fn layout(
-            &self,
+            &mut self,
             _tree: &mut widget::Tree,
             _renderer: &Renderer,
             _limits: &layout::Limits,

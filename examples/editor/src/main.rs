@@ -1,8 +1,8 @@
 use iced::highlighter;
 use iced::keyboard;
 use iced::widget::{
-    self, button, center_x, column, container, horizontal_space, pick_list,
-    row, text, text_editor, toggler, tooltip,
+    button, center_x, column, container, operation, pick_list, row, space,
+    text, text_editor, toggler, tooltip,
 };
 use iced::{Center, Element, Fill, Font, Task, Theme};
 
@@ -59,7 +59,7 @@ impl Editor {
                     )),
                     Message::FileOpened,
                 ),
-                widget::focus_next(),
+                operation::focus_next(),
             ]),
         )
     }
@@ -119,10 +119,10 @@ impl Editor {
 
                     let mut text = self.content.text();
 
-                    if let Some(ending) = self.content.line_ending() {
-                        if !text.ends_with(ending.as_str()) {
-                            text.push_str(ending.as_str());
-                        }
+                    if let Some(ending) = self.content.line_ending()
+                        && !text.ends_with(ending.as_str())
+                    {
+                        text.push_str(ending.as_str());
                     }
 
                     Task::perform(
@@ -144,7 +144,7 @@ impl Editor {
         }
     }
 
-    fn view(&self) -> Element<Message> {
+    fn view(&self) -> Element<'_, Message> {
         let controls = row![
             action(new_icon(), "New file", Some(Message::NewFile)),
             action(
@@ -157,7 +157,7 @@ impl Editor {
                 "Save file",
                 self.is_dirty.then_some(Message::SaveFile)
             ),
-            horizontal_space(),
+            space::horizontal(),
             toggler(self.word_wrap)
                 .label("Word Wrap")
                 .on_toggle(Message::WordWrapToggled),
@@ -184,7 +184,7 @@ impl Editor {
             } else {
                 String::from("New file")
             }),
-            horizontal_space(),
+            space::horizontal(),
             text({
                 let (line, column) = self.content.cursor_position();
 
@@ -326,5 +326,8 @@ fn open_icon<'a, Message>() -> Element<'a, Message> {
 fn icon<'a, Message>(codepoint: char) -> Element<'a, Message> {
     const ICON_FONT: Font = Font::with_name("editor-icons");
 
-    text(codepoint).font(ICON_FONT).into()
+    text(codepoint)
+        .font(ICON_FONT)
+        .shaping(text::Shaping::Basic)
+        .into()
 }

@@ -51,7 +51,6 @@ pub use crate::core::svg::Handle;
 ///     svg("tiger.svg").into()
 /// }
 /// ```
-#[allow(missing_debug_implementations)]
 pub struct Svg<'a, Theme = crate::Theme>
 where
     Theme: Catalog,
@@ -162,7 +161,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         _tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,

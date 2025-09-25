@@ -61,8 +61,6 @@ use crate::core::{
     Length, Padding, Pixels, Point, Rectangle, Shell, Size, Theme, Vector,
     Widget,
 };
-use crate::runtime::Action;
-use crate::runtime::task::{self, Task};
 
 /// A field that can be filled with text.
 ///
@@ -96,7 +94,6 @@ use crate::runtime::task::{self, Task};
 ///     }
 /// }
 /// ```
-#[allow(missing_debug_implementations)]
 pub struct TextInput<
     'a,
     Message,
@@ -106,7 +103,7 @@ pub struct TextInput<
     Theme: Catalog,
     Renderer: text::Renderer,
 {
-    id: Option<Id>,
+    id: Option<widget::Id>,
     placeholder: String,
     value: Value,
     is_secure: bool,
@@ -156,8 +153,8 @@ where
         }
     }
 
-    /// Sets the [`Id`] of the [`TextInput`].
-    pub fn id(mut self, id: impl Into<Id>) -> Self {
+    /// Sets the [`widget::Id`] of the [`TextInput`].
+    pub fn id(mut self, id: impl Into<widget::Id>) -> Self {
         self.id = Some(id.into());
         self
     }
@@ -297,7 +294,7 @@ where
     ///
     /// [`Renderer`]: text::Renderer
     pub fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
@@ -515,8 +512,7 @@ where
                     let is_cursor_visible = !is_disabled
                         && ((focus.now - focus.updated_at).as_millis()
                             / CURSOR_BLINK_INTERVAL_MILLIS)
-                            % 2
-                            == 0;
+                            .is_multiple_of(2);
 
                     let cursor = if is_cursor_visible {
                         Some((
@@ -671,7 +667,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
@@ -680,7 +676,7 @@ where
     }
 
     fn operate(
-        &self,
+        &mut self,
         tree: &mut Tree,
         layout: Layout<'_>,
         _renderer: &Renderer,
@@ -688,17 +684,8 @@ where
     ) {
         let state = tree.state.downcast_mut::<State<Renderer::Paragraph>>();
 
-        operation.focusable(
-            self.id.as_ref().map(|id| &id.0),
-            layout.bounds(),
-            state,
-        );
-
-        operation.text_input(
-            self.id.as_ref().map(|id| &id.0),
-            layout.bounds(),
-            state,
-        );
+        operation.text_input(self.id.as_ref(), layout.bounds(), state);
+        operation.focusable(self.id.as_ref(), layout.bounds(), state);
     }
 
     fn update(
@@ -1247,12 +1234,12 @@ where
             Event::Keyboard(keyboard::Event::KeyReleased { key, .. }) => {
                 let state = state::<Renderer>(tree);
 
-                if state.is_focused.is_some() {
-                    if let keyboard::Key::Character("v") = key.as_ref() {
-                        state.is_pasting = None;
+                if state.is_focused.is_some()
+                    && let keyboard::Key::Character("v") = key.as_ref()
+                {
+                    state.is_pasting = None;
 
-                        shell.capture_event();
-                    }
+                    shell.capture_event();
                 }
 
                 state.is_pasting = None;
@@ -1328,32 +1315,31 @@ where
             Event::Window(window::Event::RedrawRequested(now)) => {
                 let state = state::<Renderer>(tree);
 
-                if let Some(focus) = &mut state.is_focused {
-                    if focus.is_window_focused {
-                        if matches!(
-                            state.cursor.state(&self.value),
-                            cursor::State::Index(_)
-                        ) {
-                            focus.now = *now;
+                if let Some(focus) = &mut state.is_focused
+                    && focus.is_window_focused
+                {
+                    if matches!(
+                        state.cursor.state(&self.value),
+                        cursor::State::Index(_)
+                    ) {
+                        focus.now = *now;
 
-                            let millis_until_redraw =
-                                CURSOR_BLINK_INTERVAL_MILLIS
-                                    - (*now - focus.updated_at).as_millis()
-                                        % CURSOR_BLINK_INTERVAL_MILLIS;
+                        let millis_until_redraw = CURSOR_BLINK_INTERVAL_MILLIS
+                            - (*now - focus.updated_at).as_millis()
+                                % CURSOR_BLINK_INTERVAL_MILLIS;
 
-                            shell.request_redraw_at(
-                                *now + Duration::from_millis(
-                                    millis_until_redraw as u64,
-                                ),
-                            );
-                        }
-
-                        shell.request_input_method(&self.input_method(
-                            state,
-                            layout,
-                            &self.value,
-                        ));
+                        shell.request_redraw_at(
+                            *now + Duration::from_millis(
+                                millis_until_redraw as u64,
+                            ),
+                        );
                     }
+
+                    shell.request_input_method(&self.input_method(
+                        state,
+                        layout,
+                        &self.value,
+                    ));
                 }
             }
             _ => {}
@@ -1455,84 +1441,6 @@ pub enum Side {
     Right,
 }
 
-/// The identifier of a [`TextInput`].
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Id(widget::Id);
-
-impl Id {
-    /// Creates a custom [`Id`].
-    pub fn new(id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
-        Self(widget::Id::new(id))
-    }
-
-    /// Creates a unique [`Id`].
-    ///
-    /// This function produces a different [`Id`] every time it is called.
-    pub fn unique() -> Self {
-        Self(widget::Id::unique())
-    }
-}
-
-impl From<Id> for widget::Id {
-    fn from(id: Id) -> Self {
-        id.0
-    }
-}
-
-impl From<&'static str> for Id {
-    fn from(id: &'static str) -> Self {
-        Self::new(id)
-    }
-}
-
-impl From<String> for Id {
-    fn from(id: String) -> Self {
-        Self::new(id)
-    }
-}
-
-/// Produces a [`Task`] that returns whether the [`TextInput`] with the given [`Id`] is focused or not.
-pub fn is_focused(id: impl Into<Id>) -> Task<bool> {
-    task::widget(operation::focusable::is_focused(id.into().into()))
-}
-
-/// Produces a [`Task`] that focuses the [`TextInput`] with the given [`Id`].
-pub fn focus<T>(id: impl Into<Id>) -> Task<T> {
-    task::effect(Action::widget(operation::focusable::focus(id.into().0)))
-}
-
-/// Produces a [`Task`] that moves the cursor of the [`TextInput`] with the given [`Id`] to the
-/// end.
-pub fn move_cursor_to_end<T>(id: impl Into<Id>) -> Task<T> {
-    task::effect(Action::widget(operation::text_input::move_cursor_to_end(
-        id.into().0,
-    )))
-}
-
-/// Produces a [`Task`] that moves the cursor of the [`TextInput`] with the given [`Id`] to the
-/// front.
-pub fn move_cursor_to_front<T>(id: impl Into<Id>) -> Task<T> {
-    task::effect(Action::widget(operation::text_input::move_cursor_to_front(
-        id.into().0,
-    )))
-}
-
-/// Produces a [`Task`] that moves the cursor of the [`TextInput`] with the given [`Id`] to the
-/// provided position.
-pub fn move_cursor_to<T>(id: impl Into<Id>, position: usize) -> Task<T> {
-    task::effect(Action::widget(operation::text_input::move_cursor_to(
-        id.into().0,
-        position,
-    )))
-}
-
-/// Produces a [`Task`] that selects all the content of the [`TextInput`] with the given [`Id`].
-pub fn select_all<T>(id: impl Into<Id>) -> Task<T> {
-    task::effect(Action::widget(operation::text_input::select_all(
-        id.into().0,
-    )))
-}
-
 /// The state of a [`TextInput`].
 #[derive(Debug, Default, Clone)]
 pub struct State<P: text::Paragraph> {
@@ -1632,6 +1540,14 @@ impl<P: text::Paragraph> operation::Focusable for State<P> {
 }
 
 impl<P: text::Paragraph> operation::TextInput for State<P> {
+    fn text(&self) -> &str {
+        if self.value.content().is_empty() {
+            self.placeholder.content()
+        } else {
+            self.value.content()
+        }
+    }
+
     fn move_cursor_to_front(&mut self) {
         State::move_cursor_to_front(self);
     }
@@ -1817,10 +1733,10 @@ pub fn default(theme: &Theme, status: Status) -> Style {
         border: Border {
             radius: 2.0.into(),
             width: 1.0,
-            color: palette.background.strongest.color,
+            color: palette.background.strong.color,
         },
         icon: palette.background.weak.text,
-        placeholder: palette.background.strongest.color,
+        placeholder: palette.secondary.base.color,
         value: palette.background.base.text,
         selection: palette.primary.weak.color,
     };
@@ -1844,6 +1760,7 @@ pub fn default(theme: &Theme, status: Status) -> Style {
         Status::Disabled => Style {
             background: Background::Color(palette.background.weak.color),
             value: active.placeholder,
+            placeholder: palette.background.strongest.color,
             ..active
         },
     }

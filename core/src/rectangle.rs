@@ -34,8 +34,11 @@ where
 }
 
 impl Rectangle<f32> {
-    /// A rectangle starting at [`Point::ORIGIN`] with infinite width and height.
-    pub const INFINITE: Self = Self::new(Point::ORIGIN, Size::INFINITY);
+    /// A rectangle starting at negative infinity and with infinite width and height.
+    pub const INFINITE: Self = Self::new(
+        Point::new(f32::NEG_INFINITY, f32::NEG_INFINITY),
+        Size::INFINITE,
+    );
 
     /// Creates a new [`Rectangle`] with its top-left corner in the given
     /// [`Point`] and with the provided [`Size`].
@@ -244,16 +247,19 @@ impl Rectangle<f32> {
 
     /// Snaps the [`Rectangle`] to __unsigned__ integer coordinates.
     pub fn snap(self) -> Option<Rectangle<u32>> {
-        let width = self.width as u32;
-        let height = self.height as u32;
+        let top_left = self.position().snap();
+        let bottom_right = (self.position() + Vector::from(self.size())).snap();
+
+        let width = bottom_right.x.checked_sub(top_left.x)?;
+        let height = bottom_right.y.checked_sub(top_left.y)?;
 
         if width < 1 || height < 1 {
             return None;
         }
 
         Some(Rectangle {
-            x: self.x as u32,
-            y: self.y as u32,
+            x: top_left.x,
+            y: top_left.y,
             width,
             height,
         })
