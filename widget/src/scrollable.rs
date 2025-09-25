@@ -1276,11 +1276,11 @@ fn notify_viewport<Message>(
     content_bounds: Rectangle,
     shell: &mut Shell<'_, Message>,
 ) -> bool {
-    if content_bounds.width <= bounds.width
-        && content_bounds.height <= bounds.height
-    {
-        return false;
-    }
+    // if content_bounds.width <= bounds.width
+    //     && content_bounds.height <= bounds.height
+    // {
+    //     return false;
+    // }
 
     let viewport = Viewport {
         offset_x: state.offset_x,
