@@ -1,13 +1,12 @@
-use crate::core::event;
-use crate::core::layout;
-use crate::core::mouse;
-use crate::core::overlay;
-use crate::core::renderer;
-use crate::core::widget;
-use crate::core::{Clipboard, Event, Layout, Shell, Size};
+use crate::event;
+use crate::layout;
+use crate::mouse;
+use crate::overlay;
+use crate::renderer;
+use crate::widget;
+use crate::{Clipboard, Event, Layout, Shell, Size};
 
 /// An overlay container that displays nested overlays
-#[allow(missing_debug_implementations)]
 pub struct Nested<'a, Message, Theme, Renderer> {
     overlay: overlay::Element<'a, Message, Theme, Renderer>,
 }
@@ -42,12 +41,15 @@ where
             let overlay = element.as_overlay_mut();
             let node = overlay.layout(renderer, bounds);
 
-            if let Some(mut nested) =
-                overlay.overlay(Layout::new(&node), renderer)
-            {
+            let nested_node = overlay
+                .overlay(Layout::new(&node), renderer)
+                .as_mut()
+                .map(|nested| recurse(nested, renderer, bounds));
+
+            if let Some(nested_node) = nested_node {
                 layout::Node::with_children(
                     node.size(),
-                    vec![node, recurse(&mut nested, renderer, bounds)],
+                    vec![node, nested_node],
                 )
             } else {
                 layout::Node::with_children(node.size(), vec![node])

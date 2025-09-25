@@ -93,7 +93,6 @@ pub use text::editor::{Action, Edit, Line, LineEnding, Motion};
 ///     }
 /// }
 /// ```
-#[allow(missing_debug_implementations)]
 pub struct TextEditor<
     'a,
     Highlighter,
@@ -465,6 +464,15 @@ where
     }
 }
 
+impl<Renderer> Clone for Content<Renderer>
+where
+    Renderer: text::Renderer,
+{
+    fn clone(&self) -> Self {
+        Self::with_text(&self.text())
+    }
+}
+
 impl<Renderer> Default for Content<Renderer>
 where
     Renderer: text::Renderer,
@@ -526,8 +534,7 @@ impl Focus {
         self.is_window_focused
             && ((self.now - self.updated_at).as_millis()
                 / Self::CURSOR_BLINK_INTERVAL_MILLIS)
-                % 2
-                == 0
+                .is_multiple_of(2)
     }
 }
 
@@ -588,7 +595,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut widget::Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
@@ -680,22 +687,20 @@ where
                 }
             }
             Event::Window(window::Event::RedrawRequested(now)) => {
-                if let Some(focus) = &mut state.focus {
-                    if focus.is_window_focused {
-                        focus.now = *now;
+                if let Some(focus) = &mut state.focus
+                    && focus.is_window_focused
+                {
+                    focus.now = *now;
 
-                        let millis_until_redraw =
-                            Focus::CURSOR_BLINK_INTERVAL_MILLIS
-                                - (focus.now - focus.updated_at).as_millis()
-                                    % Focus::CURSOR_BLINK_INTERVAL_MILLIS;
+                    let millis_until_redraw =
+                        Focus::CURSOR_BLINK_INTERVAL_MILLIS
+                            - (focus.now - focus.updated_at).as_millis()
+                                % Focus::CURSOR_BLINK_INTERVAL_MILLIS;
 
-                        shell.request_redraw_at(
-                            focus.now
-                                + Duration::from_millis(
-                                    millis_until_redraw as u64,
-                                ),
-                        );
-                    }
+                    shell.request_redraw_at(
+                        focus.now
+                            + Duration::from_millis(millis_until_redraw as u64),
+                    );
                 }
             }
             _ => {}
@@ -1044,7 +1049,7 @@ where
     }
 
     fn operate(
-        &self,
+        &mut self,
         tree: &mut widget::Tree,
         layout: Layout<'_>,
         _renderer: &Renderer,
@@ -1365,8 +1370,6 @@ pub struct Style {
     pub background: Background,
     /// The [`Border`] of the text input.
     pub border: Border,
-    /// The [`Color`] of the icon of the text input.
-    pub icon: Color,
     /// The [`Color`] of the placeholder of the text input.
     pub placeholder: Color,
     /// The [`Color`] of the value of the text input.
@@ -1413,8 +1416,7 @@ pub fn default(theme: &Theme, status: Status) -> Style {
             width: 1.0,
             color: palette.background.strong.color,
         },
-        icon: palette.background.weak.text,
-        placeholder: palette.background.strong.color,
+        placeholder: palette.secondary.base.color,
         value: palette.background.base.text,
         selection: palette.primary.weak.color,
     };
@@ -1438,6 +1440,7 @@ pub fn default(theme: &Theme, status: Status) -> Style {
         Status::Disabled => Style {
             background: Background::Color(palette.background.weak.color),
             value: active.placeholder,
+            placeholder: palette.background.strongest.color,
             ..active
         },
     }

@@ -1,13 +1,12 @@
-use crate::executor;
-use crate::runtime::Task;
+use crate::runtime::task::{self, Task};
 
 use std::process;
 
 pub const COMPATIBLE_REVISION: &str =
-    "bd407e839a1c64c936318128ec5b5f19500a30f2";
+    "20f9c9a897fecac5dce0977bbb5639fdce1f54b9";
 
 pub fn launch() -> Task<launch::Result> {
-    executor::try_spawn_blocking(|mut sender| {
+    task::try_blocking(|mut sender| {
         let cargo_install = process::Command::new("cargo")
             .args(["install", "--list"])
             .output()?;
@@ -48,7 +47,7 @@ pub fn launch() -> Task<launch::Result> {
 }
 
 pub fn install() -> Task<install::Result> {
-    executor::try_spawn_blocking(|mut sender| {
+    task::try_blocking(|mut sender| {
         use std::io::{BufRead, BufReader};
         use std::process::{Command, Stdio};
 

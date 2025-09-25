@@ -15,7 +15,7 @@ pub struct Image {
 }
 
 impl Image {
-    pub const LIMIT: usize = 99;
+    pub const LIMIT: usize = 96;
 
     pub async fn list() -> Result<Vec<Self>, Error> {
         let client = reqwest::Client::new();
@@ -29,7 +29,7 @@ impl Image {
             .get("https://civitai.com/api/v1/images")
             .query(&[
                 ("sort", "Most Reactions"),
-                ("period", "Week"),
+                ("period", "Month"),
                 ("nsfw", "None"),
                 ("limit", &Image::LIMIT.to_string()),
             ])

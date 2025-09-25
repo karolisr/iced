@@ -7,7 +7,6 @@ use crate::widget;
 use crate::{Clipboard, Event, Layout, Shell, Size};
 
 /// A generic [`Overlay`].
-#[allow(missing_debug_implementations)]
 pub struct Element<'a, Message, Theme, Renderer> {
     overlay: Box<dyn Overlay<Message, Theme, Renderer> + 'a>,
 }
@@ -130,7 +129,7 @@ where
 
     fn overlay<'a>(
         &'a mut self,
-        layout: Layout<'_>,
+        layout: Layout<'a>,
         renderer: &Renderer,
     ) -> Option<Element<'a, B, Theme, Renderer>> {
         self.content

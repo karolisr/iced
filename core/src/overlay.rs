@@ -1,9 +1,11 @@
 //! Display interactive elements on top of other widgets.
 mod element;
 mod group;
+mod nested;
 
 pub use element::Element;
 pub use group::Group;
+pub use nested::Nested;
 
 use crate::layout;
 use crate::mouse;
@@ -82,7 +84,7 @@ where
     /// Returns the nested overlay of the [`Overlay`], if there is any.
     fn overlay<'a>(
         &'a mut self,
-        _layout: Layout<'_>,
+        _layout: Layout<'a>,
         _renderer: &Renderer,
     ) -> Option<Element<'a, Message, Theme, Renderer>> {
         None
