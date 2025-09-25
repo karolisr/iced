@@ -142,7 +142,6 @@ use std::f32;
 ///     }
 /// }
 /// ```
-#[allow(missing_debug_implementations)]
 pub struct PickList<
     'a,
     T,
@@ -348,7 +347,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
@@ -899,7 +898,7 @@ pub fn default(theme: &Theme, status: Status) -> Style {
     let active = Style {
         text_color: palette.background.weak.text,
         background: palette.background.weak.color.into(),
-        placeholder_color: palette.background.strong.color,
+        placeholder_color: palette.secondary.base.color,
         handle_color: palette.background.weak.text,
         border: Border {
             radius: 2.0.into(),

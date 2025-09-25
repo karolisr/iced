@@ -9,6 +9,7 @@ use crate::futures::{BoxStream, MaybeSend, boxed_stream};
 
 use std::convert::Infallible;
 use std::sync::Arc;
+use std::thread;
 
 #[cfg(feature = "sipper")]
 #[doc(no_inline)]
@@ -17,7 +18,6 @@ pub use sipper::{Never, Sender, Sipper, Straw, sipper, stream};
 /// A set of concurrent actions to be performed by the iced runtime.
 ///
 /// A [`Task`] _may_ produce a bunch of values of type `T`.
-#[allow(missing_debug_implementations)]
 #[must_use = "`Task` must be returned to the runtime to take effect; normally in your `update` or `new` functions."]
 pub struct Task<T> {
     stream: Option<BoxStream<Action<T>>>,
@@ -278,6 +278,14 @@ impl<T> Task<T> {
     }
 }
 
+impl<T> std::fmt::Debug for Task<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(&format!("Task<{}>", std::any::type_name::<T>()))
+            .field("units", &self.units)
+            .finish()
+    }
+}
+
 /// A handle to a [`Task`] that can be used for aborting it.
 #[derive(Debug, Clone)]
 pub struct Handle {
@@ -376,6 +384,12 @@ impl<T, E> Task<Result<T, E>> {
     }
 }
 
+impl<T> Default for Task<T> {
+    fn default() -> Self {
+        Self::none()
+    }
+}
+
 impl<T> From<()> for Task<T> {
     fn from(_value: ()) -> Self {
         Self::none()
@@ -452,4 +466,48 @@ pub fn effect<T>(action: impl Into<Action<Infallible>>) -> Task<T> {
 /// Returns the underlying [`Stream`] of the [`Task`].
 pub fn into_stream<T>(task: Task<T>) -> Option<BoxStream<Action<T>>> {
     task.stream
+}
+
+/// Creates a new [`Task`] that will run the given closure in a new thread.
+///
+/// Any data sent by the closure through the [`mpsc::Sender`] will be produced
+/// by the [`Task`].
+pub fn blocking<T>(f: impl FnOnce(mpsc::Sender<T>) + Send + 'static) -> Task<T>
+where
+    T: Send + 'static,
+{
+    let (sender, receiver) = mpsc::channel(1);
+
+    let _ = thread::spawn(move || {
+        f(sender);
+    });
+
+    Task::stream(receiver)
+}
+
+/// Creates a new [`Task`] that will run the given closure that can fail in a new
+/// thread.
+///
+/// Any data sent by the closure through the [`mpsc::Sender`] will be produced
+/// by the [`Task`].
+pub fn try_blocking<T, E>(
+    f: impl FnOnce(mpsc::Sender<T>) -> Result<(), E> + Send + 'static,
+) -> Task<Result<T, E>>
+where
+    T: Send + 'static,
+    E: Send + 'static,
+{
+    let (sender, receiver) = mpsc::channel(1);
+    let (error_sender, error_receiver) = oneshot::channel();
+
+    let _ = thread::spawn(move || {
+        if let Err(error) = f(sender) {
+            let _ = error_sender.send(Err(error));
+        }
+    });
+
+    Task::stream(stream::select(
+        receiver.map(Ok),
+        stream::once(error_receiver).filter_map(async |result| result.ok()),
+    ))
 }

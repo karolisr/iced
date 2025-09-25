@@ -20,7 +20,6 @@ use std::borrow::Borrow;
 /// to turn it into an [`Element`].
 ///
 /// [built-in widget]: crate::widget
-#[allow(missing_debug_implementations)]
 pub struct Element<'a, Message, Theme, Renderer> {
     widget: Box<dyn Widget<Message, Theme, Renderer> + 'a>,
 }
@@ -291,7 +290,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
@@ -300,7 +299,7 @@ where
     }
 
     fn operate(
-        &self,
+        &mut self,
         tree: &mut Tree,
         layout: Layout<'_>,
         renderer: &Renderer,
@@ -426,7 +425,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
@@ -435,7 +434,7 @@ where
     }
 
     fn operate(
-        &self,
+        &mut self,
         state: &mut Tree,
         layout: Layout<'_>,
         renderer: &Renderer,
@@ -530,5 +529,51 @@ where
             viewport,
             translation,
         )
+    }
+}
+
+impl<'a, T, Message, Theme, Renderer> From<Option<T>>
+    for Element<'a, Message, Theme, Renderer>
+where
+    T: Into<Self>,
+    Renderer: crate::Renderer,
+{
+    fn from(element: Option<T>) -> Self {
+        struct Void;
+
+        impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer> for Void
+        where
+            Renderer: crate::Renderer,
+        {
+            fn size(&self) -> Size<Length> {
+                Size {
+                    width: Length::Fixed(0.0),
+                    height: Length::Fixed(0.0),
+                }
+            }
+
+            fn layout(
+                &mut self,
+                _tree: &mut Tree,
+                _renderer: &Renderer,
+                _limits: &layout::Limits,
+            ) -> layout::Node {
+                layout::Node::new(Size::ZERO)
+            }
+
+            fn draw(
+                &self,
+                _tree: &Tree,
+                _renderer: &mut Renderer,
+                _theme: &Theme,
+                _style: &renderer::Style,
+                _layout: Layout<'_>,
+                _cursor: mouse::Cursor,
+                _viewport: &Rectangle,
+            ) {
+            }
+        }
+
+        element.map(T::into).unwrap_or_else(|| Element::new(Void))
     }
 }

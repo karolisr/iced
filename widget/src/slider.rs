@@ -80,7 +80,6 @@ use std::ops::RangeInclusive;
 ///     }
 /// }
 /// ```
-#[allow(missing_debug_implementations)]
 pub struct Slider<'a, T, Message, Theme = crate::Theme>
 where
     Theme: Catalog,
@@ -234,7 +233,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         _tree: &mut Tree,
         _renderer: &Renderer,
         limits: &layout::Limits,
