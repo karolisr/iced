@@ -16,7 +16,7 @@ pub fn main() -> iced::Result {
 
     iced::application(GameOfLife::default, GameOfLife::update, GameOfLife::view)
         .subscription(GameOfLife::subscription)
-        .theme(|_| Theme::Dark)
+        .theme(Theme::Dark)
         .centered()
         .run()
 }
@@ -111,7 +111,7 @@ impl GameOfLife {
         }
     }
 
-    fn view(&self) -> Element<Message> {
+    fn view(&self) -> Element<'_, Message> {
         let version = self.version;
         let selected_speed = self.next_speed.unwrap_or(self.speed);
         let controls = view_controls(
@@ -320,7 +320,7 @@ mod grid {
             }
         }
 
-        pub fn view(&self) -> Element<Message> {
+        pub fn view(&self) -> Element<'_, Message> {
             Canvas::new(self).width(Fill).height(Fill).into()
         }
 

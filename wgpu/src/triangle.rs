@@ -335,6 +335,7 @@ fn render<'a>(
                 label: Some("iced_wgpu.triangle.render_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: target,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
@@ -826,7 +827,6 @@ mod solid {
 mod gradient {
     use crate::Buffer;
     use crate::graphics::Antialiasing;
-    use crate::graphics::color;
     use crate::graphics::mesh;
     use crate::triangle;
 
@@ -921,35 +921,15 @@ mod gradient {
                 device.create_shader_module(wgpu::ShaderModuleDescriptor {
                     label: Some("iced_wgpu.triangle.gradient.shader"),
                     source: wgpu::ShaderSource::Wgsl(
-                        std::borrow::Cow::Borrowed(
-                            if color::GAMMA_CORRECTION {
-                                concat!(
-                                    include_str!("shader/triangle.wgsl"),
-                                    "\n",
-                                    include_str!(
-                                        "shader/triangle/gradient.wgsl"
-                                    ),
-                                    "\n",
-                                    include_str!("shader/color.wgsl"),
-                                    "\n",
-                                    include_str!("shader/color/oklab.wgsl")
-                                )
-                            } else {
-                                concat!(
-                                    include_str!("shader/triangle.wgsl"),
-                                    "\n",
-                                    include_str!(
-                                        "shader/triangle/gradient.wgsl"
-                                    ),
-                                    "\n",
-                                    include_str!("shader/color.wgsl"),
-                                    "\n",
-                                    include_str!(
-                                        "shader/color/linear_rgb.wgsl"
-                                    )
-                                )
-                            },
-                        ),
+                        std::borrow::Cow::Borrowed(concat!(
+                            include_str!("shader/triangle.wgsl"),
+                            "\n",
+                            include_str!("shader/triangle/gradient.wgsl"),
+                            "\n",
+                            include_str!("shader/color.wgsl"),
+                            "\n",
+                            include_str!("shader/color/linear_rgb.wgsl")
+                        )),
                     ),
                 });
 

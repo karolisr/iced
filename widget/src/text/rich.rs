@@ -13,7 +13,6 @@ use crate::core::{
 };
 
 /// A bunch of [`Rich`] text.
-#[allow(missing_debug_implementations)]
 pub struct Rich<
     'a,
     Link,
@@ -225,7 +224,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,

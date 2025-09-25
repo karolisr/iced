@@ -34,7 +34,7 @@
 //!     iced::run(update, view)
 //! }
 //! # fn update(state: &mut (), message: ()) {}
-//! # fn view(state: &()) -> iced::Element<()> { iced::widget::text("").into() }
+//! # fn view(state: &()) -> iced::Element<'_, ()> { iced::widget::text("").into() }
 //! ```
 //!
 //! Define an `update` function to __change__ your state:
@@ -55,7 +55,7 @@
 //! use iced::widget::{button, text};
 //! use iced::Element;
 //!
-//! fn view(counter: &u64) -> Element<Message> {
+//! fn view(counter: &u64) -> Element<'_, Message> {
 //!     button(text(counter)).on_press(Message::Increment).into()
 //! }
 //! # #[derive(Clone)]
@@ -95,7 +95,7 @@
 //!     }
 //! }
 //!
-//! fn view(counter: &Counter) -> Element<Message> {
+//! fn view(counter: &Counter) -> Element<'_, Message> {
 //!     button(text(counter.value)).on_press(Message::Increment).into()
 //! }
 //! ```
@@ -115,7 +115,7 @@
 //! use iced::widget::{button, column, text};
 //! use iced::Element;
 //!
-//! fn view(counter: &Counter) -> Element<Message> {
+//! fn view(counter: &Counter) -> Element<'_, Message> {
 //!     column![
 //!         text(counter.value).size(20),
 //!         button("Increment").on_press(Message::Increment),
@@ -144,7 +144,7 @@
 //! use iced::widget::{column, container, row};
 //! use iced::{Fill, Element};
 //!
-//! fn view(state: &State) -> Element<Message> {
+//! fn view(state: &State) -> Element<'_, Message> {
 //!     container(
 //!         column![
 //!             "Top",
@@ -187,7 +187,7 @@
 //! use iced::widget::container;
 //! use iced::Element;
 //!
-//! fn view(state: &State) -> Element<Message> {
+//! fn view(state: &State) -> Element<'_, Message> {
 //!     container("I am 300px tall!").height(300).into()
 //! }
 //! ```
@@ -216,7 +216,7 @@
 //!     Theme::TokyoNight
 //! }
 //! # fn update(state: &mut State, message: ()) {}
-//! # fn view(state: &State) -> iced::Element<()> { iced::widget::text("").into() }
+//! # fn view(state: &State) -> iced::Element<'_, ()> { iced::widget::text("").into() }
 //! ```
 //!
 //! The `theme` function takes the current state of the application, allowing the
@@ -237,7 +237,7 @@
 //! use iced::widget::container;
 //! use iced::Element;
 //!
-//! fn view(state: &State) -> Element<Message> {
+//! fn view(state: &State) -> Element<'_, Message> {
 //!     container("I am a rounded box!").style(container::rounded_box).into()
 //! }
 //! ```
@@ -252,7 +252,7 @@
 //! use iced::widget::button;
 //! use iced::{Element, Theme};
 //!
-//! fn view(state: &State) -> Element<Message> {
+//! fn view(state: &State) -> Element<'_, Message> {
 //!     button("I am a styled button!").style(|theme: &Theme, status| {
 //!         let palette = theme.extended_palette();
 //!
@@ -326,8 +326,8 @@
 //!
 //! Tasks can also be used to interact with the iced runtime. Some modules
 //! expose functions that create tasks for different purposes—like [changing
-//! window settings](window#functions), [focusing a widget](widget::focus_next), or
-//! [querying its visible bounds](widget::container::visible_bounds).
+//! window settings](window#functions), [focusing a widget](widget::operation::focus_next), or
+//! [querying its visible bounds](widget::selector::find_by_id).
 //!
 //! Like futures and streams, tasks expose [a monadic interface](Task::then)—but they can also be
 //! [mapped](Task::map), [chained](Task::chain), [batched](Task::batch), [canceled](Task::abortable),
@@ -359,7 +359,7 @@
 //! }
 //! # fn new() -> State { State }
 //! # fn update(state: &mut State, message: Message) {}
-//! # fn view(state: &State) -> iced::Element<Message> { iced::widget::text("").into() }
+//! # fn view(state: &State) -> iced::Element<'_, Message> { iced::widget::text("").into() }
 //! ```
 //!
 //! A [`Subscription`] is [a _declarative_ builder of streams](Subscription#the-lifetime-of-a-subscription)
@@ -452,7 +452,7 @@
 //!     }
 //! }
 //!
-//! fn view(state: &State) -> Element<Message> {
+//! fn view(state: &State) -> Element<'_, Message> {
 //!     match &state.screen {
 //!         Screen::Contacts(contacts) => contacts.view().map(Message::Contacts),
 //!         Screen::Conversation(conversation) => conversation.view().map(Message::Conversation),
@@ -525,6 +525,8 @@ pub use crate::core::{
     Function, Gradient, Length, Padding, Pixels, Point, Radians, Rectangle,
     Rotation, Settings, Shadow, Size, Theme, Transformation, Vector, never,
 };
+pub use crate::program::Preset;
+pub use crate::program::message;
 pub use crate::runtime::exit;
 pub use iced_futures::Subscription;
 
@@ -587,11 +589,12 @@ pub mod mouse {
     };
 }
 
-#[cfg(feature = "system")]
 pub mod system {
     //! Retrieve system information.
-    pub use crate::runtime::system::Information;
-    pub use crate::shell::system::*;
+    pub use crate::runtime::system::{theme, theme_changes};
+
+    #[cfg(feature = "sysinfo")]
+    pub use crate::runtime::system::{Information, information};
 }
 
 pub mod overlay {
@@ -620,15 +623,13 @@ pub mod touch {
 #[allow(hidden_glob_reexports)]
 pub mod widget {
     //! Use the built-in widgets or create your own.
+    pub use iced_runtime::widget::*;
     pub use iced_widget::*;
 
     // We hide the re-exported modules by `iced_widget`
     mod core {}
     mod graphics {}
-    mod native {}
     mod renderer {}
-    mod style {}
-    mod runtime {}
 }
 
 pub use application::Application;
@@ -691,14 +692,14 @@ pub type Result = std::result::Result<(), Error>;
 /// }
 /// ```
 pub fn run<State, Message, Theme, Renderer>(
-    update: impl application::Update<State, Message> + 'static,
-    view: impl for<'a> application::View<'a, State, Message, Theme, Renderer>
+    update: impl application::UpdateFn<State, Message> + 'static,
+    view: impl for<'a> application::ViewFn<'a, State, Message, Theme, Renderer>
     + 'static,
 ) -> Result
 where
     State: Default + 'static,
-    Message: program::Message + 'static,
-    Theme: Default + theme::Base + 'static,
+    Message: Send + message::MaybeDebug + message::MaybeClone + 'static,
+    Theme: theme::Base + 'static,
     Renderer: program::Renderer + 'static,
 {
     application(State::default, update, view).run()

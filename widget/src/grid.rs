@@ -10,7 +10,6 @@ use crate::core::{
 };
 
 /// A container that distributes its contents on a responsive grid.
-#[allow(missing_debug_implementations)]
 pub struct Grid<'a, Message, Theme = crate::Theme, Renderer = crate::Renderer> {
     spacing: f32,
     columns: Constraint,
@@ -176,7 +175,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
@@ -220,10 +219,10 @@ where
         let mut row_height = 0.0f32;
 
         for (i, (child, tree)) in
-            self.children.iter().zip(&mut tree.children).enumerate()
+            self.children.iter_mut().zip(&mut tree.children).enumerate()
         {
             let node = child
-                .as_widget()
+                .as_widget_mut()
                 .layout(tree, renderer, &cell_limits)
                 .move_to((x, y));
 
@@ -251,20 +250,21 @@ where
     }
 
     fn operate(
-        &self,
+        &mut self,
         tree: &mut Tree,
         layout: Layout<'_>,
         renderer: &Renderer,
         operation: &mut dyn Operation,
     ) {
-        operation.container(None, layout.bounds(), &mut |operation| {
+        operation.container(None, layout.bounds());
+        operation.traverse(&mut |operation| {
             self.children
-                .iter()
+                .iter_mut()
                 .zip(&mut tree.children)
                 .zip(layout.children())
                 .for_each(|((child, state), layout)| {
                     child
-                        .as_widget()
+                        .as_widget_mut()
                         .operate(state, layout, renderer, operation);
                 });
         });
