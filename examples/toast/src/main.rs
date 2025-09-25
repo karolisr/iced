@@ -2,7 +2,7 @@ use iced::event::{self, Event};
 use iced::keyboard;
 use iced::keyboard::key;
 use iced::widget::{
-    self, button, center, column, pick_list, row, slider, text, text_input,
+    button, center, column, operation, pick_list, row, slider, text, text_input,
 };
 use iced::{Center, Element, Fill, Subscription, Task};
 
@@ -83,11 +83,11 @@ impl App {
                 key: keyboard::Key::Named(key::Named::Tab),
                 modifiers,
                 ..
-            })) if modifiers.shift() => widget::focus_previous(),
+            })) if modifiers.shift() => operation::focus_previous(),
             Message::Event(Event::Keyboard(keyboard::Event::KeyPressed {
                 key: keyboard::Key::Named(key::Named::Tab),
                 ..
-            })) => widget::focus_next(),
+            })) => operation::focus_next(),
             Message::Event(_) => Task::none(),
         }
     }
@@ -171,9 +171,7 @@ mod toast {
     use iced::mouse;
     use iced::theme;
     use iced::time::{self, Duration, Instant};
-    use iced::widget::{
-        button, column, container, horizontal_rule, horizontal_space, row, text,
-    };
+    use iced::widget::{button, column, container, row, rule, space, text};
     use iced::window;
     use iced::{
         Alignment, Center, Element, Event, Fill, Length, Point, Rectangle,
@@ -239,7 +237,7 @@ mod toast {
                         container(
                             row![
                                 text(toast.title.as_str()),
-                                horizontal_space(),
+                                space::horizontal(),
                                 button("X")
                                     .on_press((on_close)(index))
                                     .padding(3),
@@ -254,7 +252,7 @@ mod toast {
                             Status::Success => success,
                             Status::Danger => danger,
                         }),
-                        horizontal_rule(1),
+                        rule::horizontal(1),
                         container(text(toast.body.as_str()))
                             .width(Fill)
                             .padding(5)
@@ -287,12 +285,12 @@ mod toast {
         }
 
         fn layout(
-            &self,
+            &mut self,
             tree: &mut Tree,
             renderer: &Renderer,
             limits: &layout::Limits,
         ) -> layout::Node {
-            self.content.as_widget().layout(
+            self.content.as_widget_mut().layout(
                 &mut tree.children[0],
                 renderer,
                 limits,
@@ -343,14 +341,15 @@ mod toast {
         }
 
         fn operate(
-            &self,
+            &mut self,
             state: &mut Tree,
             layout: Layout<'_>,
             renderer: &Renderer,
             operation: &mut dyn Operation,
         ) {
-            operation.container(None, layout.bounds(), &mut |operation| {
-                self.content.as_widget().operate(
+            operation.container(None, layout.bounds());
+            operation.traverse(&mut |operation| {
+                self.content.as_widget_mut().operate(
                     &mut state.children[0],
                     layout,
                     renderer,
@@ -580,14 +579,15 @@ mod toast {
             renderer: &Renderer,
             operation: &mut dyn widget::Operation,
         ) {
-            operation.container(None, layout.bounds(), &mut |operation| {
+            operation.container(None, layout.bounds());
+            operation.traverse(&mut |operation| {
                 self.toasts
-                    .iter()
+                    .iter_mut()
                     .zip(self.state.iter_mut())
                     .zip(layout.children())
                     .for_each(|((child, state), layout)| {
                         child
-                            .as_widget()
+                            .as_widget_mut()
                             .operate(state, layout, renderer, operation);
                     });
             });

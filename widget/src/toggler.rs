@@ -76,7 +76,6 @@ use crate::core::{
 ///     }
 /// }
 /// ```
-#[allow(missing_debug_implementations)]
 pub struct Toggler<
     'a,
     Message,
@@ -270,7 +269,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
@@ -553,7 +552,7 @@ pub fn default(theme: &Theme, status: Status) -> Style {
             if is_toggled {
                 palette.primary.base.color
             } else {
-                palette.background.strongest.color
+                palette.background.strong.color
             }
         }
         Status::Disabled => palette.background.weak.color,
@@ -577,7 +576,7 @@ pub fn default(theme: &Theme, status: Status) -> Style {
                 palette.background.weak.color
             }
         }
-        Status::Disabled => palette.background.base.color,
+        Status::Disabled => palette.background.weakest.color,
     };
 
     Style {

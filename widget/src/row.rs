@@ -32,7 +32,6 @@ use crate::core::{
 ///     ].into()
 /// }
 /// ```
-#[allow(missing_debug_implementations)]
 pub struct Row<'a, Message, Theme = crate::Theme, Renderer = crate::Renderer> {
     spacing: f32,
     padding: Padding,
@@ -160,6 +159,7 @@ where
         Wrapping {
             row: self,
             vertical_spacing: None,
+            align_x: alignment::Horizontal::Left,
         }
     }
 }
@@ -207,7 +207,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
@@ -221,26 +221,27 @@ where
             self.padding,
             self.spacing,
             self.align,
-            &self.children,
+            &mut self.children,
             &mut tree.children,
         )
     }
 
     fn operate(
-        &self,
+        &mut self,
         tree: &mut Tree,
         layout: Layout<'_>,
         renderer: &Renderer,
         operation: &mut dyn Operation,
     ) {
-        operation.container(None, layout.bounds(), &mut |operation| {
+        operation.container(None, layout.bounds());
+        operation.traverse(&mut |operation| {
             self.children
-                .iter()
+                .iter_mut()
                 .zip(&mut tree.children)
                 .zip(layout.children())
                 .for_each(|((child, state), layout)| {
                     child
-                        .as_widget()
+                        .as_widget_mut()
                         .operate(state, layout, renderer, operation);
                 });
         });
@@ -359,7 +360,6 @@ where
 /// obtain a [`Row`] that wraps its contents.
 ///
 /// The original alignment of the [`Row`] is preserved per row wrapped.
-#[allow(missing_debug_implementations)]
 pub struct Wrapping<
     'a,
     Message,
@@ -368,12 +368,22 @@ pub struct Wrapping<
 > {
     row: Row<'a, Message, Theme, Renderer>,
     vertical_spacing: Option<f32>,
+    align_x: alignment::Horizontal,
 }
 
 impl<Message, Theme, Renderer> Wrapping<'_, Message, Theme, Renderer> {
     /// Sets the vertical spacing _between_ lines.
     pub fn vertical_spacing(mut self, amount: impl Into<Pixels>) -> Self {
         self.vertical_spacing = Some(amount.into().0);
+        self
+    }
+
+    /// Sets the horizontal alignment of the wrapping [`Row`].
+    pub fn align_x(
+        mut self,
+        align_x: impl Into<alignment::Horizontal>,
+    ) -> Self {
+        self.align_x = align_x.into();
         self
     }
 }
@@ -396,7 +406,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
@@ -406,6 +416,7 @@ where
             .height(self.row.height)
             .shrink(self.row.padding);
 
+        let child_limits = limits.loose();
         let spacing = self.row.spacing;
         let vertical_spacing = self.vertical_spacing.unwrap_or(spacing);
         let max_width = limits.max().width;
@@ -423,9 +434,9 @@ where
             Alignment::End => 1.0,
         };
 
-        let align = |row_start: std::ops::Range<usize>,
-                     row_height: f32,
-                     children: &mut Vec<layout::Node>| {
+        let align_y = |row_start: std::ops::Range<usize>,
+                       row_height: f32,
+                       children: &mut Vec<layout::Node>| {
             if align_factor != 0.0 {
                 for node in &mut children[row_start] {
                     let height = node.size().height;
@@ -438,11 +449,11 @@ where
             }
         };
 
-        for (i, child) in self.row.children.iter().enumerate() {
-            let node = child.as_widget().layout(
+        for (i, child) in self.row.children.iter_mut().enumerate() {
+            let node = child.as_widget_mut().layout(
                 &mut tree.children[i],
                 renderer,
-                &limits,
+                &child_limits,
             );
 
             let child_size = node.size();
@@ -450,7 +461,7 @@ where
             if x != 0.0 && x + child_size.width > max_width {
                 intrinsic_size.width = intrinsic_size.width.max(x - spacing);
 
-                align(row_start..i, row_height, &mut children);
+                align_y(row_start..i, row_height, &mut children);
 
                 y += row_height + vertical_spacing;
                 x = 0.0;
@@ -473,7 +484,42 @@ where
         }
 
         intrinsic_size.height = y + row_height;
-        align(row_start..children.len(), row_height, &mut children);
+        align_y(row_start..children.len(), row_height, &mut children);
+
+        let align_factor = match self.align_x {
+            alignment::Horizontal::Left => 0.0,
+            alignment::Horizontal::Center => 2.0,
+            alignment::Horizontal::Right => 1.0,
+        };
+
+        if align_factor != 0.0 {
+            let total_width = intrinsic_size.width;
+
+            let mut row_start = 0;
+
+            for i in 0..children.len() {
+                let bounds = children[i].bounds();
+                let row_width = bounds.x + bounds.width;
+
+                let next_x = children
+                    .get(i + 1)
+                    .map(|node| node.bounds().x)
+                    .unwrap_or_default();
+
+                if next_x == 0.0 {
+                    let translation = Vector::new(
+                        (total_width - row_width) / align_factor,
+                        0.0,
+                    );
+
+                    for node in &mut children[row_start..=i] {
+                        node.translate_mut(translation);
+                    }
+
+                    row_start = i + 1;
+                }
+            }
+        }
 
         let size =
             limits.resolve(self.row.width, self.row.height, intrinsic_size);
@@ -482,7 +528,7 @@ where
     }
 
     fn operate(
-        &self,
+        &mut self,
         tree: &mut Tree,
         layout: Layout<'_>,
         renderer: &Renderer,

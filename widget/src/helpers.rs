@@ -4,9 +4,10 @@ use crate::checkbox::{self, Checkbox};
 use crate::combo_box::{self, ComboBox};
 use crate::container::{self, Container};
 use crate::core;
+use crate::core::theme;
 use crate::core::widget::operation::{self, Operation};
 use crate::core::window;
-use crate::core::{Element, Length, Pixels, Widget};
+use crate::core::{Element, Length, Size, Widget};
 use crate::float::{self, Float};
 use crate::keyed;
 use crate::overlay;
@@ -14,9 +15,6 @@ use crate::pane_grid::{self, PaneGrid};
 use crate::pick_list::{self, PickList};
 use crate::progress_bar::{self, ProgressBar};
 use crate::radio::{self, Radio};
-use crate::rule::{self, Rule};
-use crate::runtime::Action;
-use crate::runtime::task::{self, Task};
 use crate::scrollable::{self, Scrollable};
 use crate::slider::{self, Slider};
 use crate::text::{self, Text};
@@ -25,7 +23,9 @@ use crate::text_input::{self, TextInput};
 use crate::toggler::{self, Toggler};
 use crate::tooltip::{self, Tooltip};
 use crate::vertical_slider::{self, VerticalSlider};
-use crate::{Column, Grid, MouseArea, Pin, Pop, Row, Space, Stack, Themer};
+use crate::{
+    Column, Grid, MouseArea, Pin, Responsive, Row, Sensor, Space, Stack, Themer,
+};
 
 use std::borrow::Borrow;
 use std::ops::RangeInclusive;
@@ -609,12 +609,12 @@ where
         }
 
         fn layout(
-            &self,
+            &mut self,
             tree: &mut Tree,
             renderer: &Renderer,
             limits: &layout::Limits,
         ) -> layout::Node {
-            self.content.as_widget().layout(tree, renderer, limits)
+            self.content.as_widget_mut().layout(tree, renderer, limits)
         }
 
         fn draw(
@@ -633,14 +633,14 @@ where
         }
 
         fn operate(
-            &self,
+            &mut self,
             state: &mut Tree,
             layout: Layout<'_>,
             renderer: &Renderer,
             operation: &mut dyn operation::Operation,
         ) {
             self.content
-                .as_widget()
+                .as_widget_mut()
                 .operate(state, layout, renderer, operation);
         }
 
@@ -772,18 +772,18 @@ where
         }
 
         fn layout(
-            &self,
+            &mut self,
             tree: &mut Tree,
             renderer: &Renderer,
             limits: &layout::Limits,
         ) -> layout::Node {
-            let base = self.base.as_widget().layout(
+            let base = self.base.as_widget_mut().layout(
                 &mut tree.children[0],
                 renderer,
                 limits,
             );
 
-            let top = self.top.as_widget().layout(
+            let top = self.top.as_widget_mut().layout(
                 &mut tree.children[1],
                 renderer,
                 &layout::Limits::new(Size::ZERO, base.size()),
@@ -834,18 +834,20 @@ where
         }
 
         fn operate(
-            &self,
+            &mut self,
             tree: &mut Tree,
             layout: Layout<'_>,
             renderer: &Renderer,
             operation: &mut dyn operation::Operation,
         ) {
-            let children = [&self.base, &self.top]
+            let children = [&mut self.base, &mut self.top]
                 .into_iter()
                 .zip(layout.children().zip(&mut tree.children));
 
             for (child, (layout, tree)) in children {
-                child.as_widget().operate(tree, layout, renderer, operation);
+                child
+                    .as_widget_mut()
+                    .operate(tree, layout, renderer, operation);
             }
         }
 
@@ -990,18 +992,19 @@ where
     })
 }
 
-/// Creates a new [`Pop`] widget.
+/// Creates a new [`Sensor`] widget.
 ///
-/// A [`Pop`] widget can generate messages when it pops in and out of view.
+/// A [`Sensor`] widget can generate messages when its contents are shown,
+/// hidden, or resized.
+///
 /// It can even notify you with anticipation at a given distance!
-pub fn pop<'a, Message, Theme, Renderer>(
+pub fn sensor<'a, Message, Theme, Renderer>(
     content: impl Into<Element<'a, Message, Theme, Renderer>>,
-) -> Pop<'a, (), Message, Theme, Renderer>
+) -> Sensor<'a, (), Message, Theme, Renderer>
 where
     Renderer: core::Renderer,
-    Message: Clone,
 {
-    Pop::new(content)
+    Sensor::new(content)
 }
 
 /// Creates a new [`Scrollable`] with the provided content.
@@ -1013,7 +1016,7 @@ where
 /// # mod iced { pub mod widget { pub use iced_widget::*; } }
 /// # pub type State = ();
 /// # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
-/// use iced::widget::{column, scrollable, vertical_space};
+/// use iced::widget::{column, scrollable, space};
 ///
 /// enum Message {
 ///     // ...
@@ -1022,7 +1025,7 @@ where
 /// fn view(state: &State) -> Element<'_, Message> {
 ///     scrollable(column![
 ///         "Scroll me!",
-///         vertical_space().height(3000),
+///         space().height(3000),
 ///         "You did it!",
 ///     ]).into()
 /// }
@@ -1725,70 +1728,12 @@ where
     ComboBox::new(state, placeholder, selection, on_selected)
 }
 
-/// Creates a new [`Space`] widget that fills the available
-/// horizontal space.
+/// Creates some empty [`Space`] with no size.
 ///
-/// This can be useful to separate widgets in a [`Row`].
-pub fn horizontal_space() -> Space {
-    Space::with_width(Length::Fill)
-}
-
-/// Creates a new [`Space`] widget that fills the available
-/// vertical space.
-///
-/// This can be useful to separate widgets in a [`Column`].
-pub fn vertical_space() -> Space {
-    Space::with_height(Length::Fill)
-}
-
-/// Creates a horizontal [`Rule`] with the given height.
-///
-/// # Example
-/// ```no_run
-/// # mod iced { pub mod widget { pub use iced_widget::*; } }
-/// # pub type State = ();
-/// # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
-/// use iced::widget::horizontal_rule;
-///
-/// #[derive(Clone)]
-/// enum Message {
-///     // ...,
-/// }
-///
-/// fn view(state: &State) -> Element<'_, Message> {
-///     horizontal_rule(2).into()
-/// }
-/// ```
-pub fn horizontal_rule<'a, Theme>(height: impl Into<Pixels>) -> Rule<'a, Theme>
-where
-    Theme: rule::Catalog + 'a,
-{
-    Rule::horizontal(height)
-}
-
-/// Creates a vertical [`Rule`] with the given width.
-///
-/// # Example
-/// ```no_run
-/// # mod iced { pub mod widget { pub use iced_widget::*; } }
-/// # pub type State = ();
-/// # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
-/// use iced::widget::vertical_rule;
-///
-/// #[derive(Clone)]
-/// enum Message {
-///     // ...,
-/// }
-///
-/// fn view(state: &State) -> Element<'_, Message> {
-///     vertical_rule(2).into()
-/// }
-/// ```
-pub fn vertical_rule<'a, Theme>(width: impl Into<Pixels>) -> Rule<'a, Theme>
-where
-    Theme: rule::Catalog + 'a,
-{
-    Rule::vertical(width)
+/// This is considered the "identity" widget. It will take
+/// no space and do nothing.
+pub fn space() -> Space {
+    Space::new()
 }
 
 /// Creates a new [`ProgressBar`].
@@ -1893,7 +1838,7 @@ where
 /// for instance.
 #[cfg(feature = "svg")]
 pub fn iced<'a, Message, Theme, Renderer>(
-    text_size: impl Into<Pixels>,
+    text_size: impl Into<core::Pixels>,
 ) -> Element<'a, Message, Theme, Renderer>
 where
     Message: 'a,
@@ -1915,7 +1860,10 @@ where
 
     row![
         svg(LOGO.clone()).width(text_size * 1.3),
-        text("iced").size(text_size).font(Font::MONOSPACE)
+        text("iced")
+            .size(text_size)
+            .font(Font::MONOSPACE)
+            .shaping(text::Shaping::Advanced)
     ]
     .spacing(text_size.0 / 3.0)
     .align_y(Alignment::Center)
@@ -2035,16 +1983,6 @@ where
     crate::Shader::new(program)
 }
 
-/// Focuses the previous focusable widget.
-pub fn focus_previous<T>() -> Task<T> {
-    task::effect(Action::widget(operation::focusable::focus_previous()))
-}
-
-/// Focuses the next focusable widget.
-pub fn focus_next<T>() -> Task<T> {
-    task::effect(Action::widget(operation::focusable::focus_next()))
-}
-
 /// Creates a new [`MouseArea`].
 pub fn mouse_area<'a, Message, Theme, Renderer>(
     widget: impl Into<Element<'a, Message, Theme, Renderer>>,
@@ -2056,22 +1994,15 @@ where
 }
 
 /// A widget that applies any `Theme` to its contents.
-pub fn themer<'a, Message, OldTheme, NewTheme, Renderer>(
-    new_theme: NewTheme,
-    content: impl Into<Element<'a, Message, NewTheme, Renderer>>,
-) -> Themer<
-    'a,
-    Message,
-    OldTheme,
-    NewTheme,
-    impl Fn(&OldTheme) -> NewTheme,
-    Renderer,
->
+pub fn themer<'a, Message, Theme, Renderer>(
+    theme: Option<Theme>,
+    content: impl Into<Element<'a, Message, Theme, Renderer>>,
+) -> Themer<'a, Message, Theme, Renderer>
 where
+    Theme: theme::Base,
     Renderer: core::Renderer,
-    NewTheme: Clone,
 {
-    Themer::new(move |_| new_theme.clone(), content)
+    Themer::new(theme, content)
 }
 
 /// Creates a [`PaneGrid`] with the given [`pane_grid::State`] and view function.
@@ -2135,4 +2066,19 @@ where
     Renderer: core::Renderer,
 {
     Float::new(content)
+}
+
+/// Creates a new [`Responsive`] widget with a closure that produces its
+/// contents.
+///
+/// The `view` closure will receive the maximum available space for
+/// the [`Responsive`] during layout. You can use this [`Size`] to
+/// conditionally build the contents.
+pub fn responsive<'a, Message, Theme, Renderer>(
+    f: impl Fn(Size) -> Element<'a, Message, Theme, Renderer> + 'a,
+) -> Responsive<'a, Message, Theme, Renderer>
+where
+    Renderer: core::Renderer,
+{
+    Responsive::new(f)
 }

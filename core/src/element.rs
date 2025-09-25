@@ -20,7 +20,6 @@ use std::borrow::Borrow;
 /// to turn it into an [`Element`].
 ///
 /// [built-in widget]: crate::widget
-#[allow(missing_debug_implementations)]
 pub struct Element<'a, Message, Theme, Renderer> {
     widget: Box<dyn Widget<Message, Theme, Renderer> + 'a>,
 }
@@ -291,7 +290,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
@@ -300,7 +299,7 @@ where
     }
 
     fn operate(
-        &self,
+        &mut self,
         tree: &mut Tree,
         layout: Layout<'_>,
         renderer: &Renderer,
@@ -426,7 +425,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
@@ -435,7 +434,7 @@ where
     }
 
     fn operate(
-        &self,
+        &mut self,
         state: &mut Tree,
         layout: Layout<'_>,
         renderer: &Renderer,
@@ -554,7 +553,7 @@ where
             }
 
             fn layout(
-                &self,
+                &mut self,
                 _tree: &mut Tree,
                 _renderer: &Renderer,
                 _limits: &layout::Limits,

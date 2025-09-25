@@ -13,7 +13,6 @@ use crate::core::{
 };
 
 /// A widget that can make its contents float over other widgets.
-#[allow(missing_debug_implementations)]
 pub struct Float<'a, Message, Theme = crate::Theme, Renderer = crate::Renderer>
 where
     Theme: Catalog,
@@ -116,12 +115,12 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut widget::Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
-        self.content.as_widget().layout(tree, renderer, limits)
+        self.content.as_widget_mut().layout(tree, renderer, limits)
     }
 
     fn update(
@@ -197,14 +196,14 @@ where
     }
 
     fn operate(
-        &self,
+        &mut self,
         state: &mut widget::Tree,
         layout: Layout<'_>,
         renderer: &Renderer,
         operation: &mut dyn widget::Operation,
     ) {
         self.content
-            .as_widget()
+            .as_widget_mut()
             .operate(state, layout, renderer, operation);
     }
 

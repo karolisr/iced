@@ -51,10 +51,7 @@ use crate::core::theme;
 use crate::core::{
     self, Color, Element, Length, Padding, Pixels, Theme, color,
 };
-use crate::{
-    column, container, horizontal_rule, rich_text, row, rule, scrollable, span,
-    text, vertical_rule,
-};
+use crate::{column, container, rich_text, row, rule, scrollable, span, text};
 
 use std::borrow::BorrowMut;
 use std::cell::{Cell, RefCell};
@@ -1072,8 +1069,8 @@ impl Style {
         Self {
             inline_code_padding: padding::left(1).right(1),
             inline_code_highlight: Highlight {
-                background: color!(0x111).into(),
-                border: border::rounded(2),
+                background: color!(0x111111).into(),
+                border: border::rounded(4),
             },
             inline_code_color: Color::WHITE,
             link_color: palette.primary,
@@ -1391,7 +1388,7 @@ where
     Renderer: core::text::Renderer<Font = Font> + 'a,
 {
     row![
-        vertical_rule(4),
+        rule::vertical(4),
         column(
             contents
                 .iter()
@@ -1413,7 +1410,7 @@ where
     Theme: Catalog + 'a,
     Renderer: core::text::Renderer<Font = Font> + 'a,
 {
-    horizontal_rule(2).into()
+    rule::horizontal(2).into()
 }
 
 /// Displays a table using the default look.
@@ -1430,7 +1427,7 @@ where
 {
     use crate::table;
 
-    table(
+    let table = table(
         columns.iter().enumerate().map(move |(i, column)| {
             table::column(
                 items(viewer, settings, &column.header),
@@ -1459,8 +1456,14 @@ where
     )
     .padding_x(settings.spacing.0)
     .padding_y(settings.spacing.0 / 2.0)
-    .separator_x(0)
-    .into()
+    .separator_x(0);
+
+    scrollable(table)
+        .direction(scrollable::Direction::Horizontal(
+            scrollable::Scrollbar::default(),
+        ))
+        .spacing(settings.spacing.0 / 2.0)
+        .into()
 }
 
 /// Displays a column of items with the default look.
@@ -1631,8 +1634,8 @@ where
 pub trait Catalog:
     container::Catalog
     + scrollable::Catalog
-    + rule::Catalog
     + text::Catalog
+    + crate::rule::Catalog
     + crate::table::Catalog
 {
     /// The styling class of a Markdown code block.

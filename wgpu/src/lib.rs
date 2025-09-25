@@ -72,7 +72,6 @@ use crate::graphics::text::{Editor, Paragraph};
 ///
 /// [`wgpu`]: https://github.com/gfx-rs/wgpu-rs
 /// [`iced`]: https://github.com/iced-rs/iced
-#[allow(missing_debug_implementations)]
 pub struct Renderer {
     engine: Engine,
 
@@ -302,7 +301,7 @@ impl Renderer {
         encoder: &mut wgpu::CommandEncoder,
         viewport: &Viewport,
     ) {
-        let scale_factor = viewport.scale_factor() as f32;
+        let scale_factor = viewport.scale_factor();
 
         self.text_viewport
             .update(&self.engine.queue, viewport.physical_size());
@@ -311,7 +310,9 @@ impl Renderer {
             viewport.physical_size(),
         ));
 
-        for layer in self.layers.iter_mut() {
+        self.layers.merge();
+
+        for layer in self.layers.iter() {
             if physical_bounds
                 .intersection(&(layer.bounds * scale_factor))
                 .and_then(Rectangle::snap)
@@ -363,10 +364,10 @@ impl Renderer {
 
                 for instance in &layer.primitives {
                     instance.primitive.prepare(
+                        &mut primitive_storage,
                         &self.engine.device,
                         &self.engine.queue,
                         self.engine.format,
-                        &mut primitive_storage,
                         &instance.bounds,
                         viewport,
                     );
@@ -462,7 +463,7 @@ impl Renderer {
         #[cfg(any(feature = "svg", feature = "image"))]
         let image_cache = self.image_cache.borrow();
 
-        let scale_factor = viewport.scale_factor() as f32;
+        let scale_factor = viewport.scale_factor();
         let physical_bounds = Rectangle::<f32>::from(Rectangle::with_size(
             viewport.physical_size(),
         ));
@@ -532,7 +533,6 @@ impl Renderer {
 
             if !layer.primitives.is_empty() {
                 let render_span = debug::render(debug::Primitive::Shader);
-                let _ = ManuallyDrop::into_inner(render_pass);
 
                 let primitive_storage = self
                     .engine
@@ -540,41 +540,91 @@ impl Renderer {
                     .read()
                     .expect("Read primitive storage");
 
+                let mut need_render = Vec::new();
+
                 for instance in &layer.primitives {
+                    let bounds = instance.bounds * scale;
+
                     if let Some(clip_bounds) = (instance.bounds * scale)
                         .intersection(&physical_bounds)
                         .and_then(Rectangle::snap)
                     {
+                        render_pass.set_viewport(
+                            bounds.x,
+                            bounds.y,
+                            bounds.width,
+                            bounds.height,
+                            0.0,
+                            1.0,
+                        );
+
+                        render_pass.set_scissor_rect(
+                            clip_bounds.x,
+                            clip_bounds.y,
+                            clip_bounds.width,
+                            clip_bounds.height,
+                        );
+
+                        let drawn = instance
+                            .primitive
+                            .draw(&primitive_storage, &mut render_pass);
+
+                        if !drawn {
+                            need_render.push((instance, clip_bounds));
+                        }
+                    }
+                }
+
+                render_pass.set_viewport(
+                    0.0,
+                    0.0,
+                    viewport.physical_width() as f32,
+                    viewport.physical_height() as f32,
+                    0.0,
+                    1.0,
+                );
+
+                render_pass.set_scissor_rect(
+                    0,
+                    0,
+                    viewport.physical_width(),
+                    viewport.physical_height(),
+                );
+
+                if !need_render.is_empty() {
+                    let _ = ManuallyDrop::into_inner(render_pass);
+
+                    for (instance, clip_bounds) in need_render {
                         instance.primitive.render(
-                            encoder,
                             &primitive_storage,
+                            encoder,
                             frame,
                             &clip_bounds,
                         );
                     }
+
+                    render_pass = ManuallyDrop::new(encoder.begin_render_pass(
+                        &wgpu::RenderPassDescriptor {
+                            label: Some("iced_wgpu render pass"),
+                            color_attachments: &[Some(
+                                wgpu::RenderPassColorAttachment {
+                                    view: frame,
+                                    depth_slice: None,
+                                    resolve_target: None,
+                                    ops: wgpu::Operations {
+                                        load: wgpu::LoadOp::Load,
+                                        store: wgpu::StoreOp::Store,
+                                    },
+                                },
+                            )],
+                            depth_stencil_attachment: None,
+                            timestamp_writes: None,
+                            occlusion_query_set: None,
+                        },
+                    ));
                 }
 
                 render_span.finish();
-
-                render_pass = ManuallyDrop::new(encoder.begin_render_pass(
-                    &wgpu::RenderPassDescriptor {
-                        label: Some("iced_wgpu render pass"),
-                        color_attachments: &[Some(
-                            wgpu::RenderPassColorAttachment {
-                                view: frame,
-                                depth_slice: None,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Load,
-                                    store: wgpu::StoreOp::Store,
-                                },
-                            },
-                        )],
-                        depth_stencil_attachment: None,
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                    },
-                ));
             }
 
             #[cfg(any(feature = "svg", feature = "image"))]
@@ -648,8 +698,8 @@ impl core::Renderer for Renderer {
         layer.draw_quad(quad, background.into(), transformation);
     }
 
-    fn clear(&mut self) {
-        self.layers.clear();
+    fn reset(&mut self, new_bounds: Rectangle) {
+        self.layers.reset(new_bounds);
     }
 }
 
@@ -658,7 +708,6 @@ impl core::text::Renderer for Renderer {
     type Paragraph = Paragraph;
     type Editor = Editor;
 
-    const MONOSPACE_FONT: Font = Font::MONOSPACE;
     const ICON_FONT: Font = Font::with_name("Iced-Icons");
     const CHECKMARK_ICON: char = '\u{f00c}';
     const ARROW_DOWN_ICON: char = '\u{e800}';
@@ -746,7 +795,7 @@ impl graphics::mesh::Renderer for Renderer {
         );
 
         debug_assert!(
-            mesh.indices().len() % 3 == 0,
+            mesh.indices().len().is_multiple_of(3),
             "Mesh indices length must be a multiple of 3"
         );
 
@@ -760,8 +809,8 @@ impl graphics::geometry::Renderer for Renderer {
     type Geometry = Geometry;
     type Frame = geometry::Frame;
 
-    fn new_frame(&self, size: core::Size) -> Self::Frame {
-        geometry::Frame::new(size)
+    fn new_frame(&self, bounds: Rectangle) -> Self::Frame {
+        geometry::Frame::new(bounds)
     }
 
     fn draw_geometry(&mut self, geometry: Self::Geometry) {
@@ -803,7 +852,7 @@ impl graphics::geometry::Renderer for Renderer {
 impl primitive::Renderer for Renderer {
     fn draw_primitive(&mut self, bounds: Rectangle, primitive: impl Primitive) {
         let (layer, transformation) = self.layers.current_mut();
-        layer.draw_primitive(bounds, Box::new(primitive), transformation);
+        layer.draw_primitive(bounds, primitive, transformation);
     }
 }
 
@@ -877,7 +926,7 @@ impl renderer::Headless for Renderer {
         background_color: Color,
     ) -> Vec<u8> {
         self.screenshot(
-            &Viewport::with_physical_size(size, f64::from(scale_factor)),
+            &Viewport::with_physical_size(size, scale_factor),
             background_color,
         )
     }
