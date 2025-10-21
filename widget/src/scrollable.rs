@@ -749,27 +749,20 @@ where
                     Event::Mouse(mouse::Event::WheelScrolled { .. })
                 )
             {
+                let translation =
+                    state.translation(self.direction, bounds, content_bounds);
+
                 let cursor = match cursor_over_scrollable {
                     Some(cursor_position)
                         if !(mouse_over_x_scrollbar
                             || mouse_over_y_scrollbar) =>
                     {
-                        mouse::Cursor::Available(
-                            cursor_position
-                                + state.translation(
-                                    self.direction,
-                                    bounds,
-                                    content_bounds,
-                                ),
-                        )
+                        mouse::Cursor::Available(cursor_position + translation)
                     }
-                    _ => mouse::Cursor::Unavailable,
+                    _ => cursor.levitate() + translation,
                 };
 
                 let had_input_method = shell.input_method().is_enabled();
-
-                let translation =
-                    state.translation(self.direction, bounds, content_bounds);
 
                 self.content.as_widget_mut().update(
                     &mut tree.children[0],
@@ -1188,35 +1181,33 @@ where
         let (mouse_over_y_scrollbar, mouse_over_x_scrollbar) =
             scrollbars.is_mouse_over(cursor);
 
-        if (mouse_over_x_scrollbar || mouse_over_y_scrollbar)
-            || state.scrollers_grabbed()
-        {
-            mouse::Interaction::None
-        } else {
-            let translation =
-                state.translation(self.direction, bounds, content_bounds);
-
-            let cursor = match cursor_over_scrollable {
-                Some(cursor_position)
-                    if !(mouse_over_x_scrollbar || mouse_over_y_scrollbar) =>
-                {
-                    mouse::Cursor::Available(cursor_position + translation)
-                }
-                _ => mouse::Cursor::Unavailable,
-            };
-
-            self.content.as_widget().mouse_interaction(
-                &tree.children[0],
-                content_layout,
-                cursor,
-                &Rectangle {
-                    y: bounds.y + translation.y,
-                    x: bounds.x + translation.x,
-                    ..bounds
-                },
-                renderer,
-            )
+        if state.scrollers_grabbed() {
+            return mouse::Interaction::None;
         }
+
+        let translation =
+            state.translation(self.direction, bounds, content_bounds);
+
+        let cursor = match cursor_over_scrollable {
+            Some(cursor_position)
+                if !(mouse_over_x_scrollbar || mouse_over_y_scrollbar) =>
+            {
+                mouse::Cursor::Available(cursor_position + translation)
+            }
+            _ => cursor.levitate() + translation,
+        };
+
+        self.content.as_widget().mouse_interaction(
+            &tree.children[0],
+            content_layout,
+            cursor,
+            &Rectangle {
+                y: bounds.y + translation.y,
+                x: bounds.x + translation.x,
+                ..bounds
+            },
+            renderer,
+        )
     }
 
     fn overlay<'b>(

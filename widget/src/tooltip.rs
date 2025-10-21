@@ -28,6 +28,7 @@ use crate::core::overlay;
 use crate::core::renderer;
 use crate::core::text;
 use crate::core::widget::{self, Widget};
+use crate::core::window;
 use crate::core::{
     Clipboard, Element, Event, Length, Padding, Pixels, Point, Rectangle,
     Shell, Size, Vector,
@@ -201,8 +202,11 @@ where
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
-        if let Event::Mouse(_) = event {
+        if let Event::Mouse(_)
+        | Event::Window(window::Event::RedrawRequested(_)) = event
+        {
             let state = tree.state.downcast_mut::<State>();
+            let previous_state = *state;
             let was_idle = *state == State::Idle;
 
             *state = cursor
@@ -215,7 +219,9 @@ where
             if was_idle != is_idle {
                 shell.invalidate_layout();
                 shell.request_redraw();
-            } else if self.position == Position::FollowCursor {
+            } else if self.position == Position::FollowCursor
+                && *state != previous_state
+            {
                 shell.request_redraw();
             }
         }
