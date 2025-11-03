@@ -184,14 +184,14 @@ bitflags = "2.0"
 bytemuck = { version = "1.0", features = ["derive"] }
 bytes = "1.6"
 cargo-hot = { package = "cargo-hot-protocol", git = "https://github.com/hecrj/cargo-hot.git", rev = "b8dc518b8640928178a501257e353b73bc06cf47" }
-cosmic-text = "0.14"
-cryoglyph = { git = "https://github.com/iced-rs/cryoglyph.git", rev = "453cedec0d2ec563bd7fa87e84a2319bcebb1ba3" }
+cosmic-text = "0.15"
+cryoglyph = { git = "https://github.com/iced-rs/cryoglyph.git", rev = "99b46959369f38a06c11353bf1be81d383b289fc" }
 futures = { version = "0.3", default-features = false }
 glam = "0.25"
 guillotiere = "0.6"
 half = "2.2"
 image = { version = "0.25", default-features = false }
-kamadak-exif = "0.5"
+kamadak-exif = "0.6"
 kurbo = "0.10"
 lilt = "0.8"
 log = "0.4"
@@ -227,7 +227,7 @@ wasm-bindgen-futures = "0.4"
 wasmtimer = "0.4.1"
 web-sys = "0.3.69"
 web-time = "1.1"
-wgpu = "26.0"
+wgpu = "27.0"
 window_clipboard = "0.4.1"
 winit = { git = "https://github.com/iced-rs/winit.git", rev = "05b8ff17a06562f0a10bb46e6eaacbe2a95cb5ed" }
 

@@ -17,7 +17,7 @@ where
     title: String,
     scale_factor: f32,
     viewport: Viewport,
-    viewport_version: u64,
+    surface_version: u64,
     cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
     modifiers: winit::keyboard::ModifiersState,
     theme: Option<P::Theme>,
@@ -35,7 +35,6 @@ where
             .field("title", &self.title)
             .field("scale_factor", &self.scale_factor)
             .field("viewport", &self.viewport)
-            .field("viewport_version", &self.viewport_version)
             .field("cursor_position", &self.cursor_position)
             .field("style", &self.style)
             .finish()
@@ -74,7 +73,7 @@ where
             title,
             scale_factor,
             viewport,
-            viewport_version: 0,
+            surface_version: 0,
             cursor_position: None,
             modifiers: winit::keyboard::ModifiersState::default(),
             theme,
@@ -84,34 +83,26 @@ where
         }
     }
 
-    /// Returns the current [`Viewport`] of the [`State`].
     pub fn viewport(&self) -> &Viewport {
         &self.viewport
     }
 
-    /// Returns the version of the [`Viewport`] of the [`State`].
-    ///
-    /// The version is incremented every time the [`Viewport`] changes.
-    pub fn viewport_version(&self) -> u64 {
-        self.viewport_version
+    pub fn surface_version(&self) -> u64 {
+        self.surface_version
     }
 
-    /// Returns the physical [`Size`] of the [`Viewport`] of the [`State`].
     pub fn physical_size(&self) -> Size<u32> {
         self.viewport.physical_size()
     }
 
-    /// Returns the logical [`Size`] of the [`Viewport`] of the [`State`].
     pub fn logical_size(&self) -> Size<f32> {
         self.viewport.logical_size()
     }
 
-    /// Returns the current scale factor of the [`Viewport`] of the [`State`].
     pub fn scale_factor(&self) -> f32 {
         self.viewport.scale_factor()
     }
 
-    /// Returns the current cursor position of the [`State`].
     pub fn cursor(&self) -> mouse::Cursor {
         self.cursor_position
             .map(|cursor_position| {
@@ -124,32 +115,26 @@ where
             .unwrap_or(mouse::Cursor::Unavailable)
     }
 
-    /// Returns the current keyboard modifiers of the [`State`].
     pub fn modifiers(&self) -> winit::keyboard::ModifiersState {
         self.modifiers
     }
 
-    /// Returns the current theme of the [`State`].
     pub fn theme(&self) -> &P::Theme {
         self.theme.as_ref().unwrap_or(&self.default_theme)
     }
 
-    /// Returns the current [`theme::Mode`] of the [`State`].
     pub fn theme_mode(&self) -> theme::Mode {
         self.theme_mode
     }
 
-    /// Returns the current background [`Color`] of the [`State`].
     pub fn background_color(&self) -> Color {
         self.style.background_color
     }
 
-    /// Returns the current text [`Color`] of the [`State`].
     pub fn text_color(&self) -> Color {
         self.style.text_color
     }
 
-    /// Processes the provided window event and updates the [`State`] accordingly.
     pub fn update(
         &mut self,
         program: &program::Instance<P>,
@@ -164,8 +149,7 @@ where
                     size,
                     window.scale_factor() as f32 * self.scale_factor,
                 );
-
-                self.viewport_version = self.viewport_version.wrapping_add(1);
+                self.surface_version += 1;
             }
             WindowEvent::ScaleFactorChanged {
                 scale_factor: new_scale_factor,
@@ -177,8 +161,7 @@ where
                     size,
                     *new_scale_factor as f32 * self.scale_factor,
                 );
-
-                self.viewport_version = self.viewport_version.wrapping_add(1);
+                self.surface_version += 1;
             }
             WindowEvent::CursorMoved { position, .. }
             | WindowEvent::Touch(Touch {
@@ -206,11 +189,6 @@ where
         }
     }
 
-    /// Synchronizes the [`State`] with its [`Program`] and its respective
-    /// window.
-    ///
-    /// Normally, a [`Program`] should be synchronized with its [`State`]
-    /// and window after calling [`Program::update`].
     pub fn synchronize(
         &mut self,
         program: &program::Instance<P>,
@@ -225,20 +203,14 @@ where
             self.title = new_title;
         }
 
-        // Update scale factor and size
+        // Update scale factor
         let new_scale_factor = program.scale_factor(window_id);
-        let new_size = window.inner_size();
-        let current_size = self.viewport.physical_size();
 
-        if self.scale_factor != new_scale_factor
-            || (current_size.width, current_size.height)
-                != (new_size.width, new_size.height)
-        {
+        if self.scale_factor != new_scale_factor {
             self.viewport = Viewport::with_physical_size(
-                Size::new(new_size.width, new_size.height),
+                self.viewport.physical_size(),
                 window.scale_factor() as f32 * new_scale_factor,
             );
-            self.viewport_version = self.viewport_version.wrapping_add(1);
 
             self.scale_factor = new_scale_factor;
         }

@@ -8,7 +8,9 @@ use crate::futures::futures::stream::{self, Stream, StreamExt};
 use crate::futures::{BoxStream, MaybeSend, boxed_stream};
 
 use std::convert::Infallible;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task;
 use std::thread;
 
 #[cfg(feature = "sipper")]
@@ -267,7 +269,11 @@ impl<T> Task<T> {
         T: 'static,
     {
         Self {
-            stream: Some(boxed_stream(stream.map(Action::Output))),
+            stream: Some(boxed_stream(
+                stream::once(yield_now())
+                    .filter_map(|_| async { None })
+                    .chain(stream.map(Action::Output)),
+            )),
             units: 1,
         }
     }
@@ -373,14 +379,30 @@ impl<T, E> Task<Result<T, E>> {
     /// The success value is provided to the closure to create the subsequent [`Task`].
     pub fn and_then<A>(
         self,
-        f: impl Fn(T) -> Task<A> + MaybeSend + 'static,
-    ) -> Task<A>
+        f: impl Fn(T) -> Task<Result<A, E>> + MaybeSend + 'static,
+    ) -> Task<Result<A, E>>
     where
         T: MaybeSend + 'static,
         E: MaybeSend + 'static,
         A: MaybeSend + 'static,
     {
-        self.then(move |option| option.map_or_else(|_| Task::none(), &f))
+        self.then(move |result| {
+            result.map_or_else(|error| Task::done(Err(error)), &f)
+        })
+    }
+
+    /// Maps the error type of this [`Task`] to a different one using the given
+    /// function.
+    pub fn map_err<E2>(
+        self,
+        f: impl Fn(E) -> E2 + MaybeSend + 'static,
+    ) -> Task<Result<T, E2>>
+    where
+        T: MaybeSend + 'static,
+        E: MaybeSend + 'static,
+        E2: MaybeSend + 'static,
+    {
+        self.map(move |result| result.map_err(&f))
     }
 }
 
@@ -510,4 +532,31 @@ where
         receiver.map(Ok),
         stream::once(error_receiver).filter_map(async |result| result.ok()),
     ))
+}
+
+async fn yield_now() {
+    struct YieldNow {
+        yielded: bool,
+    }
+
+    impl Future for YieldNow {
+        type Output = ();
+
+        fn poll(
+            mut self: Pin<&mut Self>,
+            cx: &mut task::Context<'_>,
+        ) -> task::Poll<()> {
+            if self.yielded {
+                return task::Poll::Ready(());
+            }
+
+            self.yielded = true;
+
+            cx.waker().wake_by_ref();
+
+            task::Poll::Pending
+        }
+    }
+
+    YieldNow { yielded: false }.await;
 }
