@@ -128,12 +128,14 @@ where
         position: Point,
         viewport: Rectangle,
         target_height: f32,
+        menu_height: Length,
     ) -> overlay::Element<'a, Message, Theme, Renderer> {
         overlay::Element::new(Box::new(Overlay::new(
             position,
             viewport,
             self,
             target_height,
+            menu_height,
         )))
     }
 }
@@ -185,6 +187,7 @@ where
         viewport: Rectangle,
         menu: Menu<'a, 'b, T, Message, Theme, Renderer>,
         target_height: f32,
+        menu_height: Length,
     ) -> Self
     where
         T: Clone + ToString,
@@ -215,7 +218,8 @@ where
             text_shaping,
             padding,
             class,
-        });
+        })
+        .height(menu_height);
 
         state.tree.diff(&list as &dyn Widget<_, _, _>);
 
@@ -383,7 +387,7 @@ where
         let size = {
             let intrinsic = Size::new(
                 0.0,
-                (f32::from(text_line_height) + self.padding.vertical())
+                (f32::from(text_line_height) + self.padding.y())
                     * self.options.len() as f32,
             );
 
@@ -424,7 +428,7 @@ where
 
                     let option_height =
                         f32::from(self.text_line_height.to_absolute(text_size))
-                            + self.padding.vertical();
+                            + self.padding.y();
 
                     let new_hovered_option =
                         (cursor_position.y / option_height) as usize;
@@ -454,7 +458,7 @@ where
 
                     let option_height =
                         f32::from(self.text_line_height.to_absolute(text_size))
-                            + self.padding.vertical();
+                            + self.padding.y();
 
                     *self.hovered_option =
                         Some((cursor_position.y / option_height) as usize);
@@ -515,7 +519,7 @@ where
             self.text_size.unwrap_or_else(|| renderer.default_size());
         let option_height =
             f32::from(self.text_line_height.to_absolute(text_size))
-                + self.padding.vertical();
+                + self.padding.y();
 
         let offset = viewport.y - bounds.y;
         let start = (offset / option_height) as usize;

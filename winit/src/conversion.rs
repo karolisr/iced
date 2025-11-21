@@ -20,6 +20,20 @@ pub fn window_attributes(
 ) -> winit::window::WindowAttributes {
     let mut attributes = winit::window::WindowAttributes::default();
 
+    let mut buttons = winit::window::WindowButtons::empty();
+
+    if settings.resizable {
+        buttons |= winit::window::WindowButtons::MAXIMIZE;
+    }
+
+    if settings.closeable {
+        buttons |= winit::window::WindowButtons::CLOSE;
+    }
+
+    if settings.minimizable {
+        buttons |= winit::window::WindowButtons::MINIMIZE;
+    }
+
     attributes = attributes
         .with_title(title)
         .with_inner_size(winit::dpi::LogicalSize {
@@ -33,14 +47,10 @@ pub fn window_attributes(
                 .then_some(winit::window::Fullscreen::Borderless(None)),
         )
         .with_resizable(settings.resizable)
-        .with_enabled_buttons(if settings.resizable {
-            winit::window::WindowButtons::all()
-        } else {
-            winit::window::WindowButtons::CLOSE
-                | winit::window::WindowButtons::MINIMIZE
-        })
+        .with_enabled_buttons(buttons)
         .with_decorations(settings.decorations)
         .with_transparent(settings.transparent)
+        .with_blur(settings.blur)
         .with_window_icon(settings.icon.and_then(icon))
         .with_window_level(window_level(settings.level))
         .with_visible(settings.visible);
@@ -467,19 +477,31 @@ pub fn window_theme(mode: theme::Mode) -> Option<winit::window::Theme> {
 /// [`winit`]: https://github.com/rust-windowing/winit
 pub fn mouse_interaction(
     interaction: mouse::Interaction,
-) -> winit::window::CursorIcon {
+) -> Option<winit::window::CursorIcon> {
     use mouse::Interaction;
 
-    match interaction {
+    let icon = match interaction {
+        Interaction::Hidden => {
+            return None;
+        }
         Interaction::None | Interaction::Idle => {
             winit::window::CursorIcon::Default
         }
+        Interaction::ContextMenu => winit::window::CursorIcon::ContextMenu,
+        Interaction::Help => winit::window::CursorIcon::Help,
         Interaction::Pointer => winit::window::CursorIcon::Pointer,
-        Interaction::Working => winit::window::CursorIcon::Progress,
-        Interaction::Grab => winit::window::CursorIcon::Grab,
-        Interaction::Grabbing => winit::window::CursorIcon::Grabbing,
+        Interaction::Progress => winit::window::CursorIcon::Progress,
+        Interaction::Wait => winit::window::CursorIcon::Wait,
+        Interaction::Cell => winit::window::CursorIcon::Cell,
         Interaction::Crosshair => winit::window::CursorIcon::Crosshair,
         Interaction::Text => winit::window::CursorIcon::Text,
+        Interaction::Alias => winit::window::CursorIcon::Alias,
+        Interaction::Copy => winit::window::CursorIcon::Copy,
+        Interaction::Move => winit::window::CursorIcon::Move,
+        Interaction::NoDrop => winit::window::CursorIcon::NoDrop,
+        Interaction::NotAllowed => winit::window::CursorIcon::NotAllowed,
+        Interaction::Grab => winit::window::CursorIcon::Grab,
+        Interaction::Grabbing => winit::window::CursorIcon::Grabbing,
         Interaction::ResizingHorizontally => {
             winit::window::CursorIcon::EwResize
         }
@@ -490,14 +512,14 @@ pub fn mouse_interaction(
         Interaction::ResizingDiagonallyDown => {
             winit::window::CursorIcon::NwseResize
         }
-        Interaction::NotAllowed => winit::window::CursorIcon::NotAllowed,
+        Interaction::ResizingColumn => winit::window::CursorIcon::ColResize,
+        Interaction::ResizingRow => winit::window::CursorIcon::RowResize,
+        Interaction::AllScroll => winit::window::CursorIcon::AllScroll,
         Interaction::ZoomIn => winit::window::CursorIcon::ZoomIn,
         Interaction::ZoomOut => winit::window::CursorIcon::ZoomOut,
-        Interaction::Cell => winit::window::CursorIcon::Cell,
-        Interaction::Move => winit::window::CursorIcon::Move,
-        Interaction::Copy => winit::window::CursorIcon::Copy,
-        Interaction::Help => winit::window::CursorIcon::Help,
-    }
+    };
+
+    Some(icon)
 }
 
 /// Converts a `MouseButton` from [`winit`] to an [`iced`] mouse button.

@@ -1628,14 +1628,9 @@ fn run_action<'a, P, C>(
                     let _ = channel.send(window.raw.id().into());
                 }
             }
-            window::Action::RunWithHandle(id, f) => {
-                use window::raw_window_handle::HasWindowHandle;
-
-                if let Some(handle) = window_manager
-                    .get_mut(id)
-                    .and_then(|window| window.raw.window_handle().ok())
-                {
-                    f(handle);
+            window::Action::Run(id, f) => {
+                if let Some(window) = window_manager.get_mut(id) {
+                    f(window);
                 }
             }
             window::Action::Screenshot(id, channel) => {
@@ -1651,7 +1646,7 @@ fn run_action<'a, P, C>(
                     let _ = channel.send(core::window::Screenshot::new(
                         bytes,
                         window.state.physical_size(),
-                        window.state.viewport().scale_factor(),
+                        window.state.scale_factor(),
                     ));
                 }
             }
@@ -1663,6 +1658,18 @@ fn run_action<'a, P, C>(
             window::Action::DisableMousePassthrough(id) => {
                 if let Some(window) = window_manager.get_mut(id) {
                     let _ = window.raw.set_cursor_hittest(true);
+                }
+            }
+            window::Action::GetMonitorSize(id, channel) => {
+                if let Some(window) = window_manager.get(id) {
+                    let size = window.raw.current_monitor().map(|monitor| {
+                        let scale = window.state.scale_factor();
+                        let size = monitor.size().to_logical(f64::from(scale));
+
+                        Size::new(size.width, size.height)
+                    });
+
+                    let _ = channel.send(size);
                 }
             }
             window::Action::RedrawAll => {

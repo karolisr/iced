@@ -17,6 +17,7 @@ use crate::core::{
 };
 use crate::graphics::Compositor;
 use crate::program::{self, Program};
+use crate::runtime::window::raw_window_handle;
 
 use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::monitor::MonitorHandle;
@@ -245,8 +246,15 @@ where
 
     pub fn update_mouse(&mut self, interaction: mouse::Interaction) {
         if interaction != self.mouse_interaction {
-            self.raw
-                .set_cursor(conversion::mouse_interaction(interaction));
+            if let Some(icon) = conversion::mouse_interaction(interaction) {
+                self.raw.set_cursor(icon);
+
+                if self.mouse_interaction == mouse::Interaction::Hidden {
+                    self.raw.set_cursor_visible(true);
+                }
+            } else {
+                self.raw.set_cursor_visible(false);
+            }
 
             self.mouse_interaction = interaction;
         }
@@ -292,6 +300,36 @@ where
     }
 }
 
+impl<P, C> raw_window_handle::HasWindowHandle for Window<P, C>
+where
+    P: Program,
+    C: Compositor<Renderer = P::Renderer>,
+{
+    fn window_handle(
+        &self,
+    ) -> Result<
+        raw_window_handle::WindowHandle<'_>,
+        raw_window_handle::HandleError,
+    > {
+        self.raw.window_handle()
+    }
+}
+
+impl<P, C> raw_window_handle::HasDisplayHandle for Window<P, C>
+where
+    P: Program,
+    C: Compositor<Renderer = P::Renderer>,
+{
+    fn display_handle(
+        &self,
+    ) -> Result<
+        raw_window_handle::DisplayHandle<'_>,
+        raw_window_handle::HandleError,
+    > {
+        self.raw.display_handle()
+    }
+}
+
 struct Preedit<Renderer>
 where
     Renderer: text::Renderer,
@@ -321,6 +359,11 @@ where
         renderer: &Renderer,
     ) {
         self.position = position;
+
+        let background = Color {
+            a: 1.0,
+            ..background
+        };
 
         let spans = match &preedit.selection {
             Some(selection) => {
@@ -390,6 +433,11 @@ where
             .min(viewport.y + viewport.height - bounds.height);
 
         renderer.with_layer(bounds, |renderer| {
+            let background = Color {
+                a: 1.0,
+                ..background
+            };
+
             renderer.fill_quad(
                 renderer::Quad {
                     bounds,

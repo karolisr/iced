@@ -42,6 +42,7 @@ use crate::core::renderer;
 use crate::core::text::editor::{Cursor, Editor as _};
 use crate::core::text::highlighter::{self, Highlighter};
 use crate::core::text::{self, LineHeight, Text, Wrapping};
+use crate::core::theme;
 use crate::core::time::{Duration, Instant};
 use crate::core::widget::operation;
 use crate::core::widget::{self, Widget};
@@ -104,6 +105,7 @@ pub struct TextEditor<
     Theme: Catalog,
     Renderer: text::Renderer,
 {
+    id: Option<widget::Id>,
     content: &'a Content<Renderer>,
     placeholder: Option<text::Fragment<'a>>,
     font: Option<Renderer::Font>,
@@ -135,6 +137,7 @@ where
     /// Creates new [`TextEditor`] with the given [`Content`].
     pub fn new(content: &'a Content<Renderer>) -> Self {
         Self {
+            id: None,
             content,
             placeholder: None,
             font: None,
@@ -146,7 +149,7 @@ where
             max_height: f32::INFINITY,
             padding: Padding::new(5.0),
             wrapping: Wrapping::default(),
-            class: Theme::default(),
+            class: <Theme as Catalog>::default(),
             key_binding: None,
             on_edit: None,
             highlighter_settings: (),
@@ -155,6 +158,12 @@ where
             },
             last_status: None,
         }
+    }
+
+    /// Sets the [`Id`](widget::Id) of the [`TextEditor`].
+    pub fn id(mut self, id: impl Into<widget::Id>) -> Self {
+        self.id = Some(id.into());
+        self
     }
 }
 
@@ -275,6 +284,7 @@ where
         ) -> highlighter::Format<Renderer::Font>,
     ) -> TextEditor<'a, H, Message, Theme, Renderer> {
         TextEditor {
+            id: self.id,
             content: self.content,
             placeholder: self.placeholder,
             font: self.font,
@@ -505,6 +515,7 @@ pub struct State<Highlighter: text::Highlighter> {
     last_click: Option<mouse::Click>,
     drag_click: Option<mouse::click::Kind>,
     partial_scroll: f32,
+    last_theme: RefCell<Option<String>>,
     highlighter: RefCell<Highlighter>,
     highlighter_settings: Highlighter::Settings,
     highlighter_format_address: usize,
@@ -579,6 +590,7 @@ where
             last_click: None,
             drag_click: None,
             partial_scroll: 0.0,
+            last_theme: RefCell::default(),
             highlighter: RefCell::new(Highlighter::new(
                 &self.highlighter_settings,
             )),
@@ -645,7 +657,7 @@ where
                     limits
                         .height(min_bounds.height)
                         .max()
-                        .expand(Size::new(0.0, self.padding.vertical())),
+                        .expand(Size::new(0.0, self.padding.y())),
                 )
             }
         }
@@ -929,6 +941,19 @@ where
 
         let font = self.font.unwrap_or_else(|| renderer.default_font());
 
+        let theme_name = theme.name();
+
+        if state
+            .last_theme
+            .borrow()
+            .as_ref()
+            .is_none_or(|last_theme| last_theme != theme_name)
+        {
+            state.highlighter.borrow_mut().change_line(0);
+            let _ =
+                state.last_theme.borrow_mut().replace(theme_name.to_owned());
+        }
+
         internal.editor.highlight(
             font,
             state.highlighter.borrow_mut().deref_mut(),
@@ -1057,7 +1082,7 @@ where
     ) {
         let state = tree.state.downcast_mut::<State<Highlighter>>();
 
-        operation.focusable(None, layout.bounds(), state);
+        operation.focusable(self.id.as_ref(), layout.bounds(), state);
     }
 }
 
@@ -1138,6 +1163,9 @@ impl<Message> Binding<Message> {
         if !matches!(status, Status::Focused { .. }) {
             return None;
         }
+
+        #[cfg(target_os = "macos")]
+        let key = convert_macos_shortcut(&key, modifiers);
 
         match key.as_ref() {
             keyboard::Key::Named(key::Named::Enter) => Some(Self::Enter),
@@ -1235,7 +1263,7 @@ impl<Message> Update<Message> {
                 mouse::Event::ButtonPressed(mouse::Button::Left) => {
                     if let Some(cursor_position) = cursor.position_in(bounds) {
                         let cursor_position = cursor_position
-                            - Vector::new(padding.top, padding.left);
+                            - Vector::new(padding.left, padding.top);
 
                         let click = mouse::Click::new(
                             cursor_position,
@@ -1256,7 +1284,7 @@ impl<Message> Update<Message> {
                 mouse::Event::CursorMoved { .. } => match state.drag_click {
                     Some(mouse::click::Kind::Single) => {
                         let cursor_position = cursor.position_in(bounds)?
-                            - Vector::new(padding.top, padding.left);
+                            - Vector::new(padding.left, padding.top);
 
                         Some(Update::Drag(cursor_position))
                     }
@@ -1379,7 +1407,7 @@ pub struct Style {
 }
 
 /// The theme catalog of a [`TextEditor`].
-pub trait Catalog {
+pub trait Catalog: theme::Base {
     /// The item class of the [`Catalog`].
     type Class<'a>;
 
@@ -1443,5 +1471,35 @@ pub fn default(theme: &Theme, status: Status) -> Style {
             placeholder: palette.background.strongest.color,
             ..active
         },
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn convert_macos_shortcut(
+    key: &keyboard::Key,
+    modifiers: keyboard::Modifiers,
+) -> &keyboard::Key {
+    if modifiers != keyboard::Modifiers::CTRL {
+        return key;
+    }
+
+    match key.as_ref() {
+        keyboard::Key::Character("b") => {
+            &keyboard::Key::Named(key::Named::ArrowLeft)
+        }
+        keyboard::Key::Character("f") => {
+            &keyboard::Key::Named(key::Named::ArrowRight)
+        }
+        keyboard::Key::Character("a") => {
+            &keyboard::Key::Named(key::Named::Home)
+        }
+        keyboard::Key::Character("e") => &keyboard::Key::Named(key::Named::End),
+        keyboard::Key::Character("h") => {
+            &keyboard::Key::Named(key::Named::Backspace)
+        }
+        keyboard::Key::Character("d") => {
+            &keyboard::Key::Named(key::Named::Delete)
+        }
+        _ => key,
     }
 }

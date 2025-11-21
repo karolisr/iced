@@ -149,9 +149,11 @@ pub struct ComboBox<
     on_open: Option<Message>,
     on_close: Option<Message>,
     on_input: Option<Box<dyn Fn(String) -> Message>>,
-    menu_class: <Theme as menu::Catalog>::Class<'a>,
     padding: Padding,
     size: Option<f32>,
+    text_shaping: text::Shaping,
+    menu_class: <Theme as menu::Catalog>::Class<'a>,
+    menu_height: Length,
 }
 
 impl<'a, T, Message, Theme, Renderer> ComboBox<'a, T, Message, Theme, Renderer>
@@ -185,9 +187,11 @@ where
             on_input: None,
             on_open: None,
             on_close: None,
-            menu_class: <Theme as Catalog>::default_menu(),
             padding: text_input::DEFAULT_PADDING,
             size: None,
+            text_shaping: text::Shaping::default(),
+            menu_class: <Theme as Catalog>::default_menu(),
+            menu_height: Length::Shrink,
         }
     }
 
@@ -271,6 +275,18 @@ where
             text_input: self.text_input.width(width),
             ..self
         }
+    }
+
+    /// Sets the height of the menu of the [`ComboBox`].
+    pub fn menu_height(mut self, menu_height: impl Into<Length>) -> Self {
+        self.menu_height = menu_height.into();
+        self
+    }
+
+    /// Sets the [`text::Shaping`] strategy of the [`ComboBox`].
+    pub fn text_shaping(mut self, shaping: text::Shaping) -> Self {
+        self.text_shaping = shaping;
+        self
     }
 
     /// Sets the style of the input of the [`ComboBox`].
@@ -382,6 +398,25 @@ where
     /// was constructed with [`State::new`].
     pub fn options(&self) -> &[T] {
         &self.options
+    }
+
+    /// Pushes a new option to the [`State`].
+    pub fn push(&mut self, new_option: T) {
+        let mut inner = self.inner.borrow_mut();
+
+        inner.option_matchers.push(build_matcher(&new_option));
+        self.options.push(new_option);
+
+        inner.filtered_options = Filtered::new(
+            search(&self.options, &inner.option_matchers, &inner.value)
+                .cloned()
+                .collect(),
+        );
+    }
+
+    /// Returns ownership of the options of the [`State`].
+    pub fn into_options(self) -> Vec<T> {
+        self.options
     }
 
     fn value(&self) -> String {
@@ -875,7 +910,8 @@ where
                     &self.menu_class,
                 )
                 .width(bounds.width)
-                .padding(self.padding);
+                .padding(self.padding)
+                .text_shaping(self.text_shaping);
 
                 if let Some(font) = self.font {
                     menu = menu.font(font);
@@ -889,6 +925,7 @@ where
                     layout.position() + translation,
                     *viewport,
                     bounds.height,
+                    self.menu_height,
                 ))
             }
         } else {
@@ -959,12 +996,14 @@ fn build_matchers<'a, T>(
 where
     T: Display + 'a,
 {
-    options
-        .into_iter()
-        .map(|opt| {
-            let mut matcher = opt.to_string();
-            matcher.retain(|c| c.is_ascii_alphanumeric());
-            matcher.to_lowercase()
-        })
-        .collect()
+    options.into_iter().map(build_matcher).collect()
+}
+
+fn build_matcher<T>(option: T) -> String
+where
+    T: Display,
+{
+    let mut matcher = option.to_string();
+    matcher.retain(|c| c.is_ascii_alphanumeric());
+    matcher.to_lowercase()
 }
