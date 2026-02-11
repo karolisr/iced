@@ -4,7 +4,7 @@ mod scene;
 use controls::Controls;
 use scene::Scene;
 
-use iced_wgpu::graphics::Viewport;
+use iced_wgpu::graphics::{Shell, Viewport};
 use iced_wgpu::{Engine, Renderer, wgpu};
 use iced_winit::Clipboard;
 use iced_winit::conversion;
@@ -103,6 +103,8 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
                                 required_limits: wgpu::Limits::default(),
                                 memory_hints: wgpu::MemoryHints::MemoryUsage,
                                 trace: wgpu::Trace::Off,
+                                experimental_features:
+                                    wgpu::ExperimentalFeatures::disabled(),
                             })
                             .await
                             .expect("Request device");
@@ -150,6 +152,7 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
                         queue.clone(),
                         format,
                         None,
+                        Shell::headless(),
                     );
 
                     Renderer::new(engine, Font::default(), Pixels::from(16))
@@ -283,11 +286,17 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
                                 ..
                             } = state
                             {
-                                window.set_cursor(
-                                    conversion::mouse_interaction(
+                                // Update the mouse cursor
+                                if let Some(icon) =
+                                    iced_winit::conversion::mouse_interaction(
                                         mouse_interaction,
-                                    ),
-                                );
+                                    )
+                                {
+                                    window.set_cursor(icon);
+                                    window.set_cursor_visible(true);
+                                } else {
+                                    window.set_cursor_visible(false);
+                                }
                             }
 
                             // Draw the interface

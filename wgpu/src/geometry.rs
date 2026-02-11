@@ -13,7 +13,6 @@ use crate::graphics::gradient::{self, Gradient};
 use crate::graphics::mesh::{self, Mesh};
 use crate::graphics::{Image, Text};
 use crate::text;
-use crate::triangle;
 
 use lyon::geom::euclid;
 use lyon::tessellation;
@@ -33,7 +32,7 @@ pub enum Geometry {
 
 #[derive(Debug, Clone, Default)]
 pub struct Cache {
-    pub meshes: Option<triangle::Cache>,
+    pub meshes: Option<mesh::Cache>,
     pub images: Option<Arc<[Image]>>,
     pub text: Option<text::Cache>,
 }
@@ -62,11 +61,17 @@ impl Cached for Geometry {
                     Some(Arc::from(images))
                 };
 
+                let meshes = Arc::from(meshes);
+
                 if let Some(mut previous) = previous {
                     if let Some(cache) = &mut previous.meshes {
                         cache.update(meshes);
                     } else {
-                        previous.meshes = triangle::Cache::new(meshes);
+                        previous.meshes = if meshes.is_empty() {
+                            None
+                        } else {
+                            Some(mesh::Cache::new(meshes))
+                        };
                     }
 
                     if let Some(cache) = &mut previous.text {
@@ -80,7 +85,11 @@ impl Cached for Geometry {
                     previous
                 } else {
                     Cache {
-                        meshes: triangle::Cache::new(meshes),
+                        meshes: if meshes.is_empty() {
+                            None
+                        } else {
+                            Some(mesh::Cache::new(meshes))
+                        },
                         images,
                         text: text::Cache::new(group, text),
                     }
@@ -431,8 +440,14 @@ impl geometry::frame::Backend for Frame {
             self.transforms.current.transform_rectangle(bounds);
 
         image.rotation += external_rotation;
+        image.border_radius =
+            image.border_radius * self.transforms.current.scale().0;
 
-        self.images.push(Image::Raster(image, bounds));
+        self.images.push(Image::Raster {
+            image,
+            bounds,
+            clip_bounds: self.clip_bounds,
+        });
     }
 
     fn draw_svg(&mut self, bounds: Rectangle, svg: impl Into<Svg>) {
@@ -443,7 +458,11 @@ impl geometry::frame::Backend for Frame {
 
         svg.rotation += external_rotation;
 
-        self.images.push(Image::Vector(svg, bounds));
+        self.images.push(Image::Vector {
+            svg,
+            bounds,
+            clip_bounds: self.clip_bounds,
+        });
     }
 }
 

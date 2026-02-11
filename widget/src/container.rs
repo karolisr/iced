@@ -151,8 +151,8 @@ where
         self.height(height).align_y(alignment::Vertical::Center)
     }
 
-    /// Centers the contents in both the horizontal and vertical axes of the
-    /// [`Container`].
+    /// Sets the width and height of the [`Container`] and centers its contents in
+    /// both the horizontal and vertical axes.
     ///
     /// This is equivalent to chaining [`center_x`] and [`center_y`].
     ///
@@ -164,22 +164,22 @@ where
         self.center_x(length).center_y(length)
     }
 
-    /// Aligns the contents of the [`Container`] to the left.
+    /// Sets the width of the [`Container`] and aligns its contents to the left.
     pub fn align_left(self, width: impl Into<Length>) -> Self {
         self.width(width).align_x(alignment::Horizontal::Left)
     }
 
-    /// Aligns the contents of the [`Container`] to the right.
+    /// Sets the width of the [`Container`] and aligns its contents to the right.
     pub fn align_right(self, width: impl Into<Length>) -> Self {
         self.width(width).align_x(alignment::Horizontal::Right)
     }
 
-    /// Aligns the contents of the [`Container`] to the top.
+    /// Sets the height of the [`Container`] and aligns its contents to the top.
     pub fn align_top(self, height: impl Into<Length>) -> Self {
         self.height(height).align_y(alignment::Vertical::Top)
     }
 
-    /// Aligns the contents of the [`Container`] to the bottom.
+    /// Sets the height of the [`Container`] and aligns its contents to the bottom.
     pub fn align_bottom(self, height: impl Into<Length>) -> Self {
         self.height(height).align_y(alignment::Vertical::Bottom)
     }
@@ -458,7 +458,7 @@ pub fn draw_background<Renderer>(
 }
 
 /// The appearance of a container.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Style {
     /// The text [`Color`] of the container.
     pub text_color: Option<Color>,
@@ -470,6 +470,18 @@ pub struct Style {
     pub shadow: Shadow,
     /// Whether the container should be snapped to the pixel grid.
     pub snap: bool,
+}
+
+impl Default for Style {
+    fn default() -> Self {
+        Self {
+            text_color: None,
+            background: None,
+            border: Border::default(),
+            shadow: Shadow::default(),
+            snap: cfg!(feature = "crisp"),
+        }
+    }
 }
 
 impl Style {
@@ -622,6 +634,13 @@ pub fn success(theme: &Theme) -> Style {
     let palette = theme.extended_palette();
 
     style(palette.success.base)
+}
+
+/// A [`Container`] with a warning background color.
+pub fn warning(theme: &Theme) -> Style {
+    let palette = theme.extended_palette();
+
+    style(palette.warning.base)
 }
 
 /// A [`Container`] with a danger background color.

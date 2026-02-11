@@ -131,12 +131,14 @@ impl Styling {
             "You did it!"
         ])
         .width(Fill)
-        .height(Fill);
+        .height(Fill)
+        .auto_scroll(true);
 
-        let check = checkbox("Check me!", self.checkbox_value)
+        let check = checkbox(self.checkbox_value)
+            .label("Check me!")
             .on_toggle(Message::CheckboxToggled);
 
-        let check_disabled = checkbox("Disabled", self.checkbox_value);
+        let check_disabled = checkbox(self.checkbox_value).label("Disabled");
 
         let toggle = toggler(self.toggler_value)
             .label("Toggle me!")
@@ -188,18 +190,26 @@ impl Styling {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        keyboard::on_key_press(|key, _modifiers| match key {
-            keyboard::Key::Named(
-                keyboard::key::Named::ArrowUp | keyboard::key::Named::ArrowLeft,
-            ) => Some(Message::PreviousTheme),
-            keyboard::Key::Named(
+        keyboard::listen().filter_map(|event| {
+            let keyboard::Event::KeyPressed {
+                modified_key: keyboard::Key::Named(modified_key),
+                repeat: false,
+                ..
+            } = event
+            else {
+                return None;
+            };
+
+            match modified_key {
+                keyboard::key::Named::ArrowUp
+                | keyboard::key::Named::ArrowLeft => {
+                    Some(Message::PreviousTheme)
+                }
                 keyboard::key::Named::ArrowDown
-                | keyboard::key::Named::ArrowRight,
-            ) => Some(Message::NextTheme),
-            keyboard::Key::Named(keyboard::key::Named::Space) => {
-                Some(Message::ClearTheme)
+                | keyboard::key::Named::ArrowRight => Some(Message::NextTheme),
+                keyboard::key::Named::Space => Some(Message::ClearTheme),
+                _ => None,
             }
-            _ => None,
         })
     }
 

@@ -52,7 +52,7 @@ impl Size {
         }
     }
 
-    /// Rotates the given [`Size`] and returns the minimum [`Size`]
+    /// Rotates this [`Size`] and returns the minimum [`Size`]
     /// containing it.
     pub fn rotate(self, rotation: Radians) -> Size {
         let radians = f32::from(rotation);
@@ -62,6 +62,15 @@ impl Size {
                 + (self.height * radians.sin()).abs(),
             height: (self.width * radians.sin()).abs()
                 + (self.height * radians.cos()).abs(),
+        }
+    }
+
+    /// Applies an aspect ratio to this [`Size`] without
+    /// exceeding its bounds.
+    pub const fn ratio(self, aspect_ratio: f32) -> Size {
+        Size {
+            width: (self.height * aspect_ratio).min(self.width),
+            height: (self.width / aspect_ratio).min(self.height),
         }
     }
 }
@@ -84,6 +93,12 @@ impl<T> From<[T; 2]> for Size<T> {
 impl<T> From<(T, T)> for Size<T> {
     fn from((width, height): (T, T)) -> Self {
         Self { width, height }
+    }
+}
+
+impl From<(u32, u32)> for Size {
+    fn from((width, height): (u32, u32)) -> Self {
+        Size::new(width as f32, height as f32)
     }
 }
 
@@ -146,6 +161,20 @@ where
         Size {
             width: self.width * rhs,
             height: self.height * rhs,
+        }
+    }
+}
+
+impl<T> std::ops::Div<T> for Size<T>
+where
+    T: std::ops::Div<Output = T> + Copy,
+{
+    type Output = Size<T>;
+
+    fn div(self, rhs: T) -> Self::Output {
+        Size {
+            width: self.width / rhs,
+            height: self.height / rhs,
         }
     }
 }

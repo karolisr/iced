@@ -24,6 +24,7 @@ enum Generator {
         pending: Vec<changelog::Contribution>,
         state: State,
         preview: Vec<markdown::Item>,
+        timezone: jiff::tz::TimeZone,
     },
     Done,
 }
@@ -44,7 +45,7 @@ enum Message {
         Result<(Changelog, Vec<changelog::Contribution>), changelog::Error>,
     ),
     PullRequestFetched(Result<changelog::PullRequest, changelog::Error>),
-    UrlClicked(markdown::Url),
+    LinkClicked(markdown::Uri),
     TitleChanged(String),
     CategorySelected(changelog::Category),
     Next,
@@ -73,6 +74,7 @@ impl Generator {
                         pending,
                         state: State::Loading(contribution.clone()),
                         preview,
+                        timezone: jiff::tz::TimeZone::system(),
                     };
 
                     Task::perform(
@@ -113,7 +115,7 @@ impl Generator {
 
                 Task::none()
             }
-            Message::UrlClicked(url) => {
+            Message::LinkClicked(url) => {
                 let _ = webbrowser::open(url.as_str());
 
                 Task::none()
@@ -235,18 +237,17 @@ impl Generator {
                 pending,
                 state,
                 preview,
+                timezone,
             } => {
                 let progress = {
                     let total = pending.len() + changelog.len();
+                    let percent = 100.0 * changelog.len() as f32 / total as f32;
 
-                    let bar = progress_bar(
-                        0.0..=1.0,
-                        changelog.len() as f32 / total as f32,
-                    )
-                    .style(progress_bar::secondary);
+                    let bar = progress_bar(0.0..=100.0, percent)
+                        .style(progress_bar::secondary);
 
                     let label = text!(
-                        "{amount_reviewed} / {total}",
+                        "{amount_reviewed} / {total} ({percent:.0}%)",
                         amount_reviewed = changelog.len()
                     )
                     .font(Font::MONOSPACE)
@@ -270,6 +271,7 @@ impl Generator {
                                 span(&pull_request.title)
                                     .size(24)
                                     .link(pull_request.id),
+                                "\n",
                                 span(format!(" by {}", pull_request.author))
                                     .font(Font {
                                         style: font::Style::Italic,
@@ -281,7 +283,7 @@ impl Generator {
 
                             let description =
                                 markdown(description, self.theme())
-                                    .map(Message::UrlClicked);
+                                    .map(Message::LinkClicked);
 
                             let labels =
                                 row(pull_request.labels.iter().map(|label| {
@@ -297,9 +299,19 @@ impl Generator {
                                 .spacing(10)
                                 .wrap();
 
+                            let created_at = text(
+                                timezone
+                                    .to_datetime(pull_request.created_at)
+                                    .strftime("%B %d, %Y at %I:%M%p")
+                                    .to_string(),
+                            )
+                            .size(12);
+
                             column![
                                 title,
-                                labels,
+                                row![labels, created_at]
+                                    .align_y(Center)
+                                    .spacing(10),
                                 scrollable(description)
                                     .spacing(10)
                                     .width(Fill)
@@ -312,7 +324,8 @@ impl Generator {
                             "Type a changelog entry title...",
                             title,
                         )
-                        .on_input(Message::TitleChanged);
+                        .on_input(Message::TitleChanged)
+                        .on_submit(Message::Next);
 
                         let category = pick_list(
                             changelog::Category::ALL,
@@ -351,8 +364,9 @@ impl Generator {
                                     self.theme(),
                                 ),
                             )
-                            .map(Message::UrlClicked),
+                            .map(Message::LinkClicked),
                         )
+                        .width(Fill)
                         .spacing(10),
                     )
                     .width(Fill)
@@ -370,6 +384,6 @@ impl Generator {
     }
 
     fn theme(&self) -> Theme {
-        Theme::TokyoNightStorm
+        Theme::CatppuccinMocha
     }
 }
