@@ -36,8 +36,8 @@ use crate::shell;
 use crate::theme;
 use crate::window;
 use crate::{
-    Element, Executor, Font, Preset, Result, Settings, Size, Subscription,
-    Task, Theme,
+    Element, Executor, Font, Never, Preset, Result, Settings, Size,
+    Subscription, Task, Theme,
 };
 
 use iced_debug as debug;
@@ -198,10 +198,17 @@ impl<P: Program> Application<P> {
         #[cfg(feature = "tester")]
         let program = iced_tester::attach(self);
 
-        #[cfg(all(feature = "debug", not(feature = "tester")))]
+        #[cfg(all(
+            feature = "debug",
+            not(feature = "tester"),
+            not(target_arch = "wasm32")
+        ))]
         let program = iced_devtools::attach(self);
 
-        #[cfg(not(any(feature = "tester", feature = "debug")))]
+        #[cfg(not(any(
+            feature = "tester",
+            all(feature = "debug", not(target_arch = "wasm32"))
+        )))]
         let program = self;
 
         Ok(shell::run(program)?)
@@ -593,8 +600,8 @@ pub trait UpdateFn<State, Message> {
     fn update(&self, state: &mut State, message: Message) -> Task<Message>;
 }
 
-impl<State, Message> UpdateFn<State, Message> for () {
-    fn update(&self, _state: &mut State, _message: Message) -> Task<Message> {
+impl<State> UpdateFn<State, Never> for () {
+    fn update(&self, _state: &mut State, _message: Never) -> Task<Never> {
         Task::none()
     }
 }

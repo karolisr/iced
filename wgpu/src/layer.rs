@@ -5,6 +5,7 @@ use crate::graphics;
 use crate::graphics::Mesh;
 use crate::graphics::color;
 use crate::graphics::layer;
+use crate::graphics::mesh;
 use crate::graphics::text::{Editor, Paragraph};
 use crate::image::{self, Image};
 use crate::primitive::{self, Primitive};
@@ -126,13 +127,34 @@ impl Layer {
         self.pending_text.push(text);
     }
 
+    pub fn draw_text_raw(
+        &mut self,
+        raw: graphics::text::Raw,
+        transformation: Transformation,
+    ) {
+        let raw = Text::Raw {
+            raw,
+            transformation,
+        };
+
+        self.pending_text.push(raw);
+    }
+
     pub fn draw_image(&mut self, image: Image, transformation: Transformation) {
         match image {
-            Image::Raster(image, bounds) => {
-                self.draw_raster(image, bounds, transformation);
+            Image::Raster {
+                image,
+                bounds,
+                clip_bounds,
+            } => {
+                self.draw_raster(image, bounds, clip_bounds, transformation);
             }
-            Image::Vector(svg, bounds) => {
-                self.draw_svg(svg, bounds, transformation);
+            Image::Vector {
+                svg,
+                bounds,
+                clip_bounds,
+            } => {
+                self.draw_svg(svg, bounds, clip_bounds, transformation);
             }
         }
     }
@@ -141,9 +163,18 @@ impl Layer {
         &mut self,
         image: core::Image,
         bounds: Rectangle,
+        clip_bounds: Rectangle,
         transformation: Transformation,
     ) {
-        let image = Image::Raster(image, bounds * transformation);
+        let image = Image::Raster {
+            image: core::Image {
+                border_radius: image.border_radius
+                    * transformation.scale_factor(),
+                ..image
+            },
+            bounds: bounds * transformation,
+            clip_bounds: clip_bounds * transformation,
+        };
 
         self.images.push(image);
     }
@@ -152,9 +183,14 @@ impl Layer {
         &mut self,
         svg: Svg,
         bounds: Rectangle,
+        clip_bounds: Rectangle,
         transformation: Transformation,
     ) {
-        let svg = Image::Vector(svg, bounds * transformation);
+        let svg = Image::Vector {
+            svg,
+            bounds: bounds * transformation,
+            clip_bounds: clip_bounds * transformation,
+        };
 
         self.images.push(svg);
     }
@@ -195,7 +231,7 @@ impl Layer {
 
     pub fn draw_mesh_cache(
         &mut self,
-        cache: triangle::Cache,
+        cache: mesh::Cache,
         transformation: Transformation,
     ) {
         self.flush_meshes();
