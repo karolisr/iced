@@ -39,9 +39,10 @@ use crate::core::keyboard::key;
 use crate::core::layout::{self, Layout};
 use crate::core::mouse;
 use crate::core::renderer;
-use crate::core::text::editor::{Cursor, Editor as _};
+use crate::core::text::editor::Editor as _;
 use crate::core::text::highlighter::{self, Highlighter};
 use crate::core::text::{self, LineHeight, Text, Wrapping};
+use crate::core::theme;
 use crate::core::time::{Duration, Instant};
 use crate::core::widget::operation;
 use crate::core::widget::{self, Widget};
@@ -54,11 +55,13 @@ use crate::core::{
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::fmt;
+use std::ops;
 use std::ops::DerefMut;
-use std::ops::Range;
 use std::sync::Arc;
 
-pub use text::editor::{Action, Edit, Line, LineEnding, Motion};
+pub use text::editor::{
+    Action, Cursor, Edit, Line, LineEnding, Motion, Position, Selection,
+};
 
 /// A multi-line text input.
 ///
@@ -104,6 +107,7 @@ pub struct TextEditor<
     Theme: Catalog,
     Renderer: text::Renderer,
 {
+    id: Option<widget::Id>,
     content: &'a Content<Renderer>,
     placeholder: Option<text::Fragment<'a>>,
     font: Option<Renderer::Font>,
@@ -135,6 +139,7 @@ where
     /// Creates new [`TextEditor`] with the given [`Content`].
     pub fn new(content: &'a Content<Renderer>) -> Self {
         Self {
+            id: None,
             content,
             placeholder: None,
             font: None,
@@ -146,7 +151,7 @@ where
             max_height: f32::INFINITY,
             padding: Padding::new(5.0),
             wrapping: Wrapping::default(),
-            class: Theme::default(),
+            class: <Theme as Catalog>::default(),
             key_binding: None,
             on_edit: None,
             highlighter_settings: (),
@@ -155,6 +160,12 @@ where
             },
             last_status: None,
         }
+    }
+
+    /// Sets the [`Id`](widget::Id) of the [`TextEditor`].
+    pub fn id(mut self, id: impl Into<widget::Id>) -> Self {
+        self.id = Some(id.into());
+        self
     }
 }
 
@@ -275,6 +286,7 @@ where
         ) -> highlighter::Format<Renderer::Font>,
     ) -> TextEditor<'a, H, Message, Theme, Renderer> {
         TextEditor {
+            id: self.id,
             content: self.content,
             placeholder: self.placeholder,
             font: self.font,
@@ -344,9 +356,9 @@ where
         let text_bounds = bounds.shrink(self.padding);
         let translation = text_bounds.position() - Point::ORIGIN;
 
-        let cursor = match internal.editor.cursor() {
-            Cursor::Caret(position) => position,
-            Cursor::Selection(ranges) => {
+        let cursor = match internal.editor.selection() {
+            Selection::Caret(position) => position,
+            Selection::Range(ranges) => {
                 ranges.first().cloned().unwrap_or_default().position()
             }
         };
@@ -355,11 +367,13 @@ where
             self.text_size.unwrap_or_else(|| renderer.default_size()),
         );
 
-        let position =
-            cursor + translation + Vector::new(0.0, f32::from(line_height));
+        let position = cursor + translation;
 
         InputMethod::Enabled {
-            position,
+            cursor: Rectangle::new(
+                position,
+                Size::new(1.0, f32::from(line_height)),
+            ),
             purpose: input_method::Purpose::Normal,
             preedit: state.preedit.as_ref().map(input_method::Preedit::as_ref),
         }
@@ -376,7 +390,6 @@ where
     R: text::Renderer,
 {
     editor: R::Editor,
-    is_dirty: bool,
 }
 
 impl<R> Content<R>
@@ -392,7 +405,6 @@ where
     pub fn with_text(text: &str) -> Self {
         Self(RefCell::new(Internal {
             editor: R::Editor::with_text(text),
-            is_dirty: true,
         }))
     }
 
@@ -401,7 +413,18 @@ where
         let internal = self.0.get_mut();
 
         internal.editor.perform(action);
-        internal.is_dirty = true;
+    }
+
+    /// Moves the current cursor to reflect the given one.
+    pub fn move_to(&mut self, cursor: Cursor) {
+        let internal = self.0.get_mut();
+
+        internal.editor.move_to(cursor);
+    }
+
+    /// Returns the current cursor position of the [`Content`].
+    pub fn cursor(&self) -> Cursor {
+        self.0.borrow().editor.cursor()
     }
 
     /// Returns the amount of lines of the [`Content`].
@@ -448,19 +471,19 @@ where
         contents
     }
 
+    /// Returns the selected text of the [`Content`].
+    pub fn selection(&self) -> Option<String> {
+        self.0.borrow().editor.copy()
+    }
+
     /// Returns the kind of [`LineEnding`] used for separating lines in the [`Content`].
     pub fn line_ending(&self) -> Option<LineEnding> {
         Some(self.line(0)?.ending)
     }
 
-    /// Returns the selected text of the [`Content`].
-    pub fn selection(&self) -> Option<String> {
-        self.0.borrow().editor.selection()
-    }
-
-    /// Returns the current cursor position of the [`Content`].
-    pub fn cursor_position(&self) -> (usize, usize) {
-        self.0.borrow().editor.cursor_position()
+    /// Returns whether or not the the [`Content`] is empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.borrow().editor.is_empty()
     }
 }
 
@@ -492,7 +515,6 @@ where
 
         f.debug_struct("Content")
             .field("editor", &internal.editor)
-            .field("is_dirty", &internal.is_dirty)
             .finish()
     }
 }
@@ -505,6 +527,7 @@ pub struct State<Highlighter: text::Highlighter> {
     last_click: Option<mouse::Click>,
     drag_click: Option<mouse::click::Kind>,
     partial_scroll: f32,
+    last_theme: RefCell<Option<String>>,
     highlighter: RefCell<Highlighter>,
     highlighter_settings: Highlighter::Settings,
     highlighter_format_address: usize,
@@ -579,6 +602,7 @@ where
             last_click: None,
             drag_click: None,
             partial_scroll: 0.0,
+            last_theme: RefCell::default(),
             highlighter: RefCell::new(Highlighter::new(
                 &self.highlighter_settings,
             )),
@@ -645,7 +669,7 @@ where
                     limits
                         .height(min_bounds.height)
                         .max()
-                        .expand(Size::new(0.0, self.padding.vertical())),
+                        .expand(Size::new(0.0, self.padding.y())),
                 )
             }
         }
@@ -929,6 +953,19 @@ where
 
         let font = self.font.unwrap_or_else(|| renderer.default_font());
 
+        let theme_name = theme.name();
+
+        if state
+            .last_theme
+            .borrow()
+            .as_ref()
+            .is_none_or(|last_theme| last_theme != theme_name)
+        {
+            state.highlighter.borrow_mut().change_line(0);
+            let _ =
+                state.last_theme.borrow_mut().replace(theme_name.to_owned());
+        }
+
         internal.editor.highlight(
             font,
             state.highlighter.borrow_mut().deref_mut(),
@@ -982,8 +1019,8 @@ where
         let translation = text_bounds.position() - Point::ORIGIN;
 
         if let Some(focus) = state.focus.as_ref() {
-            match internal.editor.cursor() {
-                Cursor::Caret(position) if focus.is_cursor_visible() => {
+            match internal.editor.selection() {
+                Selection::Caret(position) if focus.is_cursor_visible() => {
                     let cursor =
                         Rectangle::new(
                             position + translation,
@@ -1009,7 +1046,7 @@ where
                         );
                     }
                 }
-                Cursor::Selection(ranges) => {
+                Selection::Range(ranges) => {
                     for range in ranges.into_iter().filter_map(|range| {
                         text_bounds.intersection(&(range + translation))
                     }) {
@@ -1022,14 +1059,14 @@ where
                         );
                     }
                 }
-                Cursor::Caret(_) => {}
+                Selection::Caret(_) => {}
             }
         }
     }
 
     fn mouse_interaction(
         &self,
-        _state: &widget::Tree,
+        _tree: &widget::Tree,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         _viewport: &Rectangle,
@@ -1057,7 +1094,7 @@ where
     ) {
         let state = tree.state.downcast_mut::<State<Highlighter>>();
 
-        operation.focusable(None, layout.bounds(), state);
+        operation.focusable(self.id.as_ref(), layout.bounds(), state);
     }
 }
 
@@ -1115,8 +1152,18 @@ pub enum Binding<Message> {
 /// A key press.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyPress {
-    /// The key pressed.
+    /// The original key pressed without modifiers applied to it.
+    ///
+    /// You should use this key for combinations (e.g. Ctrl+C).
     pub key: keyboard::Key,
+    /// The key pressed with modifiers applied to it.
+    ///
+    /// You should use this key for any single key bindings (e.g. motions).
+    pub modified_key: keyboard::Key,
+    /// The physical key pressed.
+    ///
+    /// You should use this key for layout-independent bindings.
+    pub physical_key: keyboard::key::Physical,
     /// The state of the keyboard modifiers.
     pub modifiers: keyboard::Modifiers,
     /// The text produced by the key press.
@@ -1130,6 +1177,8 @@ impl<Message> Binding<Message> {
     pub fn from_key_press(event: KeyPress) -> Option<Self> {
         let KeyPress {
             key,
+            modified_key,
+            physical_key,
             modifiers,
             text,
             status,
@@ -1139,7 +1188,25 @@ impl<Message> Binding<Message> {
             return None;
         }
 
-        match key.as_ref() {
+        let combination = match key.to_latin(physical_key) {
+            Some('c') if modifiers.command() => Some(Self::Copy),
+            Some('x') if modifiers.command() => Some(Self::Cut),
+            Some('v') if modifiers.command() && !modifiers.alt() => {
+                Some(Self::Paste)
+            }
+            Some('a') if modifiers.command() => Some(Self::SelectAll),
+            _ => None,
+        };
+
+        if let Some(binding) = combination {
+            return Some(binding);
+        }
+
+        #[cfg(target_os = "macos")]
+        let modified_key =
+            convert_macos_shortcut(&key, modifiers).unwrap_or(modified_key);
+
+        match modified_key.as_ref() {
             keyboard::Key::Named(key::Named::Enter) => Some(Self::Enter),
             keyboard::Key::Named(key::Named::Backspace) => {
                 Some(Self::Backspace)
@@ -1150,20 +1217,6 @@ impl<Message> Binding<Message> {
                 Some(Self::Delete)
             }
             keyboard::Key::Named(key::Named::Escape) => Some(Self::Unfocus),
-            keyboard::Key::Character("c") if modifiers.command() => {
-                Some(Self::Copy)
-            }
-            keyboard::Key::Character("x") if modifiers.command() => {
-                Some(Self::Cut)
-            }
-            keyboard::Key::Character("v")
-                if modifiers.command() && !modifiers.alt() =>
-            {
-                Some(Self::Paste)
-            }
-            keyboard::Key::Character("a") if modifiers.command() => {
-                Some(Self::SelectAll)
-            }
             _ => {
                 if let Some(text) = text {
                     let c = text.chars().find(|c| !c.is_control())?;
@@ -1214,7 +1267,7 @@ enum Ime {
     Toggle(bool),
     Preedit {
         content: String,
-        selection: Option<Range<usize>>,
+        selection: Option<ops::Range<usize>>,
     },
     Commit(String),
 }
@@ -1235,7 +1288,7 @@ impl<Message> Update<Message> {
                 mouse::Event::ButtonPressed(mouse::Button::Left) => {
                     if let Some(cursor_position) = cursor.position_in(bounds) {
                         let cursor_position = cursor_position
-                            - Vector::new(padding.top, padding.left);
+                            - Vector::new(padding.left, padding.top);
 
                         let click = mouse::Click::new(
                             cursor_position,
@@ -1256,7 +1309,7 @@ impl<Message> Update<Message> {
                 mouse::Event::CursorMoved { .. } => match state.drag_click {
                     Some(mouse::click::Kind::Single) => {
                         let cursor_position = cursor.position_in(bounds)?
-                            - Vector::new(padding.top, padding.left);
+                            - Vector::new(padding.left, padding.top);
 
                         Some(Update::Drag(cursor_position))
                     }
@@ -1302,6 +1355,8 @@ impl<Message> Update<Message> {
             },
             Event::Keyboard(keyboard::Event::KeyPressed {
                 key,
+                modified_key,
+                physical_key,
                 modifiers,
                 text,
                 ..
@@ -1316,6 +1371,8 @@ impl<Message> Update<Message> {
 
                 let key_press = KeyPress {
                     key: key.clone(),
+                    modified_key: modified_key.clone(),
+                    physical_key: *physical_key,
                     modifiers: *modifiers,
                     text: text.clone(),
                     status,
@@ -1379,7 +1436,7 @@ pub struct Style {
 }
 
 /// The theme catalog of a [`TextEditor`].
-pub trait Catalog {
+pub trait Catalog: theme::Base {
     /// The item class of the [`Catalog`].
     type Class<'a>;
 
@@ -1444,4 +1501,26 @@ pub fn default(theme: &Theme, status: Status) -> Style {
             ..active
         },
     }
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn convert_macos_shortcut(
+    key: &keyboard::Key,
+    modifiers: keyboard::Modifiers,
+) -> Option<keyboard::Key> {
+    if modifiers != keyboard::Modifiers::CTRL {
+        return None;
+    }
+
+    let key = match key.as_ref() {
+        keyboard::Key::Character("b") => key::Named::ArrowLeft,
+        keyboard::Key::Character("f") => key::Named::ArrowRight,
+        keyboard::Key::Character("a") => key::Named::Home,
+        keyboard::Key::Character("e") => key::Named::End,
+        keyboard::Key::Character("h") => key::Named::Backspace,
+        keyboard::Key::Character("d") => key::Named::Delete,
+        _ => return None,
+    };
+
+    Some(keyboard::Key::Named(key))
 }

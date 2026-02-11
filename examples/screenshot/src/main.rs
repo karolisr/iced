@@ -59,7 +59,7 @@ impl Example {
                     image::Handle::from_rgba(
                         screenshot.size.width,
                         screenshot.size.height,
-                        screenshot.bytes,
+                        screenshot.rgba,
                     ),
                 ));
             }
@@ -105,7 +105,7 @@ impl Example {
                                 image::Handle::from_rgba(
                                     screenshot.size.width,
                                     screenshot.size.height,
-                                    screenshot.bytes,
+                                    screenshot.rgba,
                                 ),
                             ));
                             self.crop_error = None;
@@ -227,8 +227,12 @@ impl Example {
     fn subscription(&self) -> Subscription<Message> {
         use keyboard::key;
 
-        keyboard::on_key_press(|key, _modifiers| {
-            if let keyboard::Key::Named(key::Named::F5) = key {
+        keyboard::listen().filter_map(|event| {
+            if let keyboard::Event::KeyPressed {
+                modified_key: keyboard::Key::Named(key::Named::F5),
+                ..
+            } = event
+            {
                 Some(Message::Screenshot)
             } else {
                 None
@@ -243,7 +247,7 @@ async fn save_to_png(screenshot: Screenshot) -> Result<String, PngError> {
     tokio::task::spawn_blocking(move || {
         img::save_buffer(
             &path,
-            &screenshot.bytes,
+            &screenshot.rgba,
             screenshot.size.width,
             screenshot.size.height,
             ColorType::Rgba8,

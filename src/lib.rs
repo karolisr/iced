@@ -327,7 +327,7 @@
 //! Tasks can also be used to interact with the iced runtime. Some modules
 //! expose functions that create tasks for different purposes—like [changing
 //! window settings](window#functions), [focusing a widget](widget::operation::focus_next), or
-//! [querying its visible bounds](widget::selector::find_by_id).
+//! [querying its visible bounds](widget::selector::find).
 //!
 //! Like futures and streams, tasks expose [a monadic interface](Task::then)—but they can also be
 //! [mapped](Task::map), [chained](Task::chain), [batched](Task::batch), [canceled](Task::abortable),
@@ -368,8 +368,8 @@
 //! visible widgets of your user interface, at every moment.
 //!
 //! As with tasks, some modules expose convenient functions that build a [`Subscription`] for you—like
-//! [`time::every`] which can be used to listen to time, or [`keyboard::on_key_press`] which will notify you
-//! of any key presses. But you can also create your own with [`Subscription::run`] and [`run_with`].
+//! [`time::every`] which can be used to listen to time, or [`keyboard::listen`] which will notify you
+//! of any keyboard events. But you can also create your own with [`Subscription::run`] and [`run_with`].
 //!
 //! [`run_with`]: Subscription::run_with
 //!
@@ -473,7 +473,6 @@
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/iced-rs/iced/bdf0430880f5c29443f5f0a0ae4895866dfef4c6/docs/logo.svg"
 )]
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 use iced_widget::graphics;
 use iced_widget::renderer;
@@ -495,6 +494,18 @@ compile_error!(
     "No futures executor has been enabled! You must enable an \
     executor feature.\n\
     Available options: thread-pool, tokio, or smol."
+);
+
+#[cfg(all(
+    target_family = "unix",
+    not(target_os = "macos"),
+    not(feature = "wayland"),
+    not(feature = "x11"),
+))]
+compile_error!(
+    "No Unix display server backend has been enabled. You must enable a \
+    display server feature.\n\
+    Available options: x11, wayland."
 );
 
 #[cfg(feature = "highlighter")]
@@ -522,8 +533,9 @@ pub use crate::core::padding;
 pub use crate::core::theme;
 pub use crate::core::{
     Alignment, Animation, Background, Border, Color, ContentFit, Degrees,
-    Function, Gradient, Length, Padding, Pixels, Point, Radians, Rectangle,
-    Rotation, Settings, Shadow, Size, Theme, Transformation, Vector, never,
+    Function, Gradient, Length, Never, Padding, Pixels, Point, Radians,
+    Rectangle, Rotation, Settings, Shadow, Size, Theme, Transformation, Vector,
+    never,
 };
 pub use crate::program::Preset;
 pub use crate::program::message;
@@ -570,16 +582,14 @@ pub mod font {
 pub mod event {
     //! Handle events of a user interface.
     pub use crate::core::event::{Event, Status};
-    pub use iced_futures::event::{
-        listen, listen_raw, listen_url, listen_with,
-    };
+    pub use iced_futures::event::{listen, listen_raw, listen_with};
 }
 
 pub mod keyboard {
     //! Listen and react to keyboard events.
     pub use crate::core::keyboard::key;
     pub use crate::core::keyboard::{Event, Key, Location, Modifiers};
-    pub use iced_futures::keyboard::{on_key_press, on_key_release};
+    pub use iced_futures::keyboard::listen;
 }
 
 pub mod mouse {
@@ -626,6 +636,13 @@ pub mod widget {
     pub use iced_runtime::widget::*;
     pub use iced_widget::*;
 
+    #[cfg(feature = "image")]
+    pub mod image {
+        //! Images display raster graphics in different formats (PNG, JPG, etc.).
+        pub use iced_runtime::image::{Allocation, Error, allocate};
+        pub use iced_widget::image::*;
+    }
+
     // We hide the re-exported modules by `iced_widget`
     mod core {}
     mod graphics {}
@@ -641,6 +658,7 @@ pub use font::Font;
 pub use program::Program;
 pub use renderer::Renderer;
 pub use task::Task;
+pub use window::Window;
 
 #[doc(inline)]
 pub use application::application;

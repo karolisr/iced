@@ -1,5 +1,4 @@
 use iced::keyboard;
-use iced::time::milliseconds;
 use iced::widget::{
     self, Text, button, center, center_x, checkbox, column, keyed_column,
     operation, row, scrollable, text, text_input,
@@ -20,7 +19,8 @@ pub fn main() -> iced::Result {
     application().run()
 }
 
-fn application() -> Application<impl Program<Message = Message>> {
+fn application() -> Application<impl Program<Message = Message, Theme = Theme>>
+{
     iced::application(Todos::new, Todos::update, Todos::view)
         .subscription(Todos::subscription)
         .title(Todos::title)
@@ -253,12 +253,12 @@ impl Todos {
     fn subscription(&self) -> Subscription<Message> {
         use keyboard::key;
 
-        keyboard::on_key_press(|key, modifiers| {
-            let keyboard::Key::Named(key) = key else {
-                return None;
-            };
-
-            match (key, modifiers) {
+        keyboard::listen().filter_map(|event| match event {
+            keyboard::Event::KeyPressed {
+                key: keyboard::Key::Named(key),
+                modifiers,
+                ..
+            } => match (key, modifiers) {
                 (key::Named::Tab, _) => Some(Message::TabPressed {
                     shift: modifiers.shift(),
                 }),
@@ -269,7 +269,8 @@ impl Todos {
                     Some(Message::ToggleFullscreen(window::Mode::Windowed))
                 }
                 _ => None,
-            }
+            },
+            _ => None,
         })
     }
 }
@@ -285,16 +286,11 @@ struct Task {
     state: TaskState,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum TaskState {
+    #[default]
     Idle,
     Editing,
-}
-
-impl Default for TaskState {
-    fn default() -> Self {
-        Self::Idle
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -343,7 +339,8 @@ impl Task {
     fn view(&self, i: usize) -> Element<'_, TaskMessage> {
         match &self.state {
             TaskState::Idle => {
-                let checkbox = checkbox(&self.description, self.completed)
+                let checkbox = checkbox(self.completed)
+                    .label(&self.description)
                     .on_toggle(TaskMessage::Completed)
                     .width(Fill)
                     .size(17)
@@ -528,6 +525,8 @@ impl SavedState {
     }
 
     async fn save(self) -> Result<(), SaveError> {
+        use iced::time::milliseconds;
+
         let json = serde_json::to_string_pretty(&self)
             .map_err(|_| SaveError::Format)?;
 
