@@ -272,8 +272,8 @@ impl Rectangle<f32> {
         Self {
             x: self.x - padding.left,
             y: self.y - padding.top,
-            width: self.width + padding.horizontal(),
-            height: self.height + padding.vertical(),
+            width: self.width + padding.x(),
+            height: self.height + padding.y(),
         }
     }
 
@@ -284,8 +284,8 @@ impl Rectangle<f32> {
         Self {
             x: self.x + padding.left,
             y: self.y + padding.top,
-            width: self.width - padding.horizontal(),
-            height: self.height - padding.vertical(),
+            width: self.width - padding.x(),
+            height: self.height - padding.y(),
         }
     }
 
@@ -391,22 +391,6 @@ where
             x: self.x - translation.x,
             y: self.y - translation.y,
             ..self
-        }
-    }
-}
-
-impl<T> std::ops::Mul<Vector<T>> for Rectangle<T>
-where
-    T: std::ops::Mul<Output = T> + Copy,
-{
-    type Output = Rectangle<T>;
-
-    fn mul(self, scale: Vector<T>) -> Self {
-        Rectangle {
-            x: self.x * scale.x,
-            y: self.y * scale.y,
-            width: self.width * scale.x,
-            height: self.height * scale.y,
         }
     }
 }

@@ -113,6 +113,19 @@ macro_rules! stack {
     );
 }
 
+/// Creates a [`Grid`] with the given children.
+///
+/// [`Grid`]: crate::Grid
+#[macro_export]
+macro_rules! grid {
+    () => (
+        $crate::Grid::new()
+    );
+    ($($x:expr),+ $(,)?) => (
+        $crate::Grid::with_children([$($crate::core::Element::from($x)),+])
+    );
+}
+
 /// Creates a new [`Text`] widget with the provided content.
 ///
 /// [`Text`]: core::widget::Text
@@ -634,19 +647,19 @@ where
 
         fn operate(
             &mut self,
-            state: &mut Tree,
+            tree: &mut Tree,
             layout: Layout<'_>,
             renderer: &Renderer,
             operation: &mut dyn operation::Operation,
         ) {
             self.content
                 .as_widget_mut()
-                .operate(state, layout, renderer, operation);
+                .operate(tree, layout, renderer, operation);
         }
 
         fn update(
             &mut self,
-            state: &mut Tree,
+            tree: &mut Tree,
             event: &Event,
             layout: Layout<'_>,
             cursor: mouse::Cursor,
@@ -661,7 +674,7 @@ where
             );
 
             self.content.as_widget_mut().update(
-                state, event, layout, cursor, renderer, clipboard, shell,
+                tree, event, layout, cursor, renderer, clipboard, shell,
                 viewport,
             );
 
@@ -911,11 +924,11 @@ where
                 if !is_visible {
                     Shell::replace_redraw_request(shell, redraw_request);
                 }
-            };
 
-            if shell.is_event_captured() {
-                return;
-            }
+                if shell.is_event_captured() {
+                    return;
+                }
+            };
 
             self.base.as_widget_mut().update(
                 base_tree,
@@ -1035,7 +1048,7 @@ pub fn scrollable<'a, Message, Theme, Renderer>(
 ) -> Scrollable<'a, Message, Theme, Renderer>
 where
     Theme: scrollable::Catalog + 'a,
-    Renderer: core::Renderer,
+    Renderer: core::text::Renderer,
 {
     Scrollable::new(content)
 }
@@ -1250,7 +1263,8 @@ pub use crate::markdown::view as markdown;
 /// }
 ///
 /// fn view(state: &State) -> Element<'_, Message> {
-///     checkbox("Toggle me!", state.is_checked)
+///     checkbox(state.is_checked)
+///         .label("Toggle me!")
 ///         .on_toggle(Message::CheckboxToggled)
 ///         .into()
 /// }
@@ -1265,14 +1279,13 @@ pub use crate::markdown::view as markdown;
 /// ```
 /// ![Checkbox drawn by `iced_wgpu`](https://github.com/iced-rs/iced/blob/7760618fb112074bc40b148944521f312152012a/docs/images/checkbox.png?raw=true)
 pub fn checkbox<'a, Message, Theme, Renderer>(
-    label: impl Into<String>,
     is_checked: bool,
 ) -> Checkbox<'a, Message, Theme, Renderer>
 where
     Theme: checkbox::Catalog + 'a,
     Renderer: core::text::Renderer,
 {
-    Checkbox::new(label, is_checked)
+    Checkbox::new(is_checked)
 }
 
 /// Creates a new [`Radio`].
@@ -1836,34 +1849,44 @@ where
 ///
 /// Useful for showing some love to your favorite GUI library in your "About" screen,
 /// for instance.
-#[cfg(feature = "svg")]
 pub fn iced<'a, Message, Theme, Renderer>(
     text_size: impl Into<core::Pixels>,
 ) -> Element<'a, Message, Theme, Renderer>
 where
     Message: 'a,
-    Renderer: core::Renderer
-        + core::text::Renderer<Font = core::Font>
-        + core::svg::Renderer
-        + 'a,
-    Theme: text::Catalog + crate::svg::Catalog + 'a,
+    Renderer: core::Renderer + core::text::Renderer<Font = core::Font> + 'a,
+    Theme: text::Catalog + container::Catalog + 'a,
+    <Theme as container::Catalog>::Class<'a>:
+        From<container::StyleFn<'a, Theme>>,
+    <Theme as text::Catalog>::Class<'a>: From<text::StyleFn<'a, Theme>>,
 {
-    use crate::core::{Alignment, Font};
-    use crate::svg;
-    use std::sync::LazyLock;
-
-    static LOGO: LazyLock<svg::Handle> = LazyLock::new(|| {
-        svg::Handle::from_memory(include_bytes!("../assets/iced-logo.svg"))
-    });
+    use crate::core::border;
+    use crate::core::color;
+    use crate::core::gradient;
+    use crate::core::{Alignment, Color, Font, Radians};
 
     let text_size = text_size.into();
 
     row![
-        svg(LOGO.clone()).width(text_size * 1.3),
-        text("iced")
-            .size(text_size)
-            .font(Font::MONOSPACE)
-            .shaping(text::Shaping::Advanced)
+        container(
+            text(Renderer::ICED_LOGO)
+                .line_height(1.0)
+                .size(text_size)
+                .font(Renderer::ICON_FONT)
+                .color(Color::WHITE)
+        )
+        .padding(text_size * 0.15)
+        .style(move |_| container::Style {
+            background: Some(
+                gradient::Linear::new(Radians::PI / 4.0)
+                    .add_stop(0.0, color!(0x0033ff))
+                    .add_stop(1.0, color!(0x1177ff))
+                    .into()
+            ),
+            border: border::rounded(border::radius(text_size * 0.4)),
+            ..container::Style::default()
+        }),
+        text("iced").size(text_size).font(Font::MONOSPACE)
     ]
     .spacing(text_size.0 / 3.0)
     .align_y(Alignment::Center)
