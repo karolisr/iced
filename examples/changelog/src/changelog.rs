@@ -1,8 +1,9 @@
+use jiff::Timestamp;
 use serde::Deserialize;
 use tokio::fs;
 use tokio::process;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fmt;
 use std::io;
@@ -16,6 +17,7 @@ pub struct Changelog {
     fixed: Vec<String>,
     removed: Vec<String>,
     authors: Vec<String>,
+    contributions: BTreeMap<String, usize>,
 }
 
 impl Changelog {
@@ -27,6 +29,7 @@ impl Changelog {
             fixed: Vec::new(),
             removed: Vec::new(),
             authors: Vec::new(),
+            contributions: BTreeMap::new(),
         }
     }
 
@@ -100,6 +103,19 @@ impl Changelog {
 
         let mut candidates = Contribution::list().await?;
 
+        for candidate in &candidates {
+            *changelog
+                .contributions
+                .entry(candidate.author.clone())
+                .or_default() += 1;
+        }
+
+        for author in &changelog.authors {
+            if !changelog.contributions.contains_key(author) {
+                changelog.contributions.insert(author.clone(), 1);
+            }
+        }
+
         for reviewed_entry in changelog.entries() {
             candidates.retain(|candidate| candidate.id != reviewed_entry);
         }
@@ -154,10 +170,21 @@ impl Changelog {
 
         target.push(item);
 
+        let _ = self.contributions.entry(entry.author.clone()).or_default();
+
         if entry.author != "hecrj" && !self.authors.contains(&entry.author) {
             self.authors.push(entry.author);
-            self.authors.sort_by_key(|author| author.to_lowercase());
         }
+
+        self.authors.sort_by(|a, b| {
+            self.contributions
+                .get(a)
+                .copied()
+                .unwrap_or_default()
+                .cmp(&self.contributions.get(b).copied().unwrap_or_default())
+                .reverse()
+                .then(a.to_lowercase().cmp(&b.to_lowercase()))
+        });
     }
 }
 
@@ -262,6 +289,7 @@ impl fmt::Display for Category {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Contribution {
     pub id: u64,
+    pub author: String,
 }
 
 impl Contribution {
@@ -283,11 +311,15 @@ impl Contribution {
             .lines()
             .filter(|title| !title.is_empty())
             .filter_map(|title| {
-                let (_, pull_request) = title.split_once("#")?;
+                let (_, pull_request) = title.split_once('#')?;
                 let (pull_request, _) = pull_request.split_once([')', ' '])?;
+
+                let (author, _) = title.split_once('/').unwrap_or_default();
+                let (_, author) = author.rsplit_once(' ').unwrap_or_default();
 
                 Some(Contribution {
                     id: pull_request.parse().ok()?,
+                    author: author.to_owned(),
                 })
             })
             .collect();
@@ -306,6 +338,7 @@ pub struct PullRequest {
     pub description: Option<String>,
     pub labels: Vec<String>,
     pub author: String,
+    pub created_at: Timestamp,
 }
 
 impl PullRequest {
@@ -334,6 +367,7 @@ impl PullRequest {
             body: Option<String>,
             user: User,
             labels: Vec<Label>,
+            created_at: String,
         }
 
         #[derive(Deserialize)]
@@ -351,9 +385,10 @@ impl PullRequest {
         Ok(Self {
             id: contribution.id,
             title: schema.title,
-            description: schema.body,
+            description: schema.body.map(|body| body.replace("\r", "")),
             labels: schema.labels.into_iter().map(|label| label.name).collect(),
             author: schema.user.login,
+            created_at: schema.created_at.parse()?,
         })
     }
 }
@@ -371,6 +406,9 @@ pub enum Error {
 
     #[error("the changelog format is not valid")]
     InvalidFormat,
+
+    #[error("date could not be parsed: {0}")]
+    InvalidDate(#[from] jiff::Error),
 }
 
 impl From<io::Error> for Error {

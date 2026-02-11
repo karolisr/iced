@@ -11,18 +11,18 @@
 //! Additionally, a [`conversion`] module is available for users that decide to
 //! implement a custom event loop.
 //!
-//! [`iced_runtime`]: https://github.com/iced-rs/iced/tree/0.13/runtime
+//! [`iced_runtime`]: https://github.com/iced-rs/iced/tree/0.14/runtime
 //! [`winit`]: https://github.com/rust-windowing/winit
 //! [`conversion`]: crate::conversion
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/iced-rs/iced/9ab6923e943f784985e9ef9ca28b10278297225d/docs/logo.svg"
 )]
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+pub use iced_debug as debug;
 pub use iced_program as program;
 pub use program::core;
 pub use program::graphics;
 pub use program::runtime;
-pub use runtime::debug;
 pub use runtime::futures;
 pub use winit;
 
@@ -49,7 +49,8 @@ use crate::futures::futures::task;
 use crate::futures::futures::{Future, StreamExt};
 use crate::futures::subscription;
 use crate::futures::{Executor, Runtime};
-use crate::graphics::{Compositor, compositor};
+use crate::graphics::{Compositor, Shell, compositor};
+use crate::runtime::image;
 use crate::runtime::system;
 use crate::runtime::user_interface::{self, UserInterface};
 use crate::runtime::{Action, Task};
@@ -75,10 +76,12 @@ where
     let settings = program.settings();
     let window_settings = program.window();
 
-    let graphics_settings = settings.clone().into();
     let event_loop = EventLoop::with_user_event()
         .build()
         .expect("Create event loop");
+
+    let graphics_settings = settings.clone().into();
+    let display_handle = event_loop.owned_display_handle();
 
     let (proxy, worker) = Proxy::new(event_loop.create_proxy());
 
@@ -130,6 +133,7 @@ where
         proxy.clone(),
         event_receiver,
         control_sender,
+        display_handle,
         is_daemon,
         graphics_settings,
         settings.fonts,
@@ -241,23 +245,6 @@ where
                 Event::EventLoopAwakened(winit::event::Event::UserEvent(
                     action,
                 )),
-            );
-        }
-
-        fn received_url(
-            &mut self,
-            event_loop: &winit::event_loop::ActiveEventLoop,
-            url: String,
-        ) {
-            self.process_event(
-                event_loop,
-                Event::EventLoopAwakened(
-                    winit::event::Event::PlatformSpecific(
-                        winit::event::PlatformSpecific::MacOS(
-                            winit::event::MacOS::ReceivedUrl(url),
-                        ),
-                    ),
-                ),
             );
         }
 
@@ -434,6 +421,16 @@ where
                                 self.error = Some(error);
                                 event_loop.exit();
                             }
+                            Control::SetAutomaticWindowTabbing(_enabled) => {
+                                #[cfg(target_os = "macos")]
+                                {
+                                    use winit::platform::macos::ActiveEventLoopExtMacOS;
+                                    event_loop
+                                        .set_allows_automatic_window_tabbing(
+                                            _enabled,
+                                        );
+                                }
+                            }
                         },
                         _ => {
                             break;
@@ -491,6 +488,7 @@ enum Control {
         on_open: oneshot::Sender<window::Id>,
         scale_factor: f32,
     },
+    SetAutomaticWindowTabbing(bool),
 }
 
 async fn run_instance<P>(
@@ -499,6 +497,7 @@ async fn run_instance<P>(
     mut proxy: Proxy<P::Message>,
     mut event_receiver: mpsc::UnboundedReceiver<Event<Action<P::Message>>>,
     mut control_sender: mpsc::UnboundedSender<Control>,
+    display_handle: winit::event_loop::OwnedDisplayHandle,
     is_daemon: bool,
     graphics_settings: graphics::Settings,
     default_fonts: Vec<Cow<'static, [u8]>>,
@@ -540,12 +539,15 @@ async fn run_instance<P>(
                 .boxed(),
         );
 
-        mundy::Preferences::once_blocking(
-            mundy::Interest::ColorScheme,
-            core::time::Duration::from_millis(200),
-        )
-        .map(|preferences| to_mode(preferences.color_scheme))
-        .unwrap_or_default()
+        runtime
+            .enter(|| {
+                mundy::Preferences::once_blocking(
+                    mundy::Interest::ColorScheme,
+                    core::time::Duration::from_millis(200),
+                )
+            })
+            .map(|preferences| to_mode(preferences.color_scheme))
+            .unwrap_or_default()
     };
 
     #[cfg(not(all(feature = "linux-theme-detection", target_os = "linux")))]
@@ -554,7 +556,7 @@ async fn run_instance<P>(
 
     log::info!("System theme: {system_theme:?}");
 
-    loop {
+    'next_event: loop {
         // Empty the queue if possible
         let event = if let Ok(event) = event_receiver.try_next() {
             event
@@ -580,12 +582,20 @@ async fn run_instance<P>(
 
                     let create_compositor = {
                         let window = window.clone();
+                        let display_handle = display_handle.clone();
                         let proxy = proxy.clone();
                         let default_fonts = default_fonts.clone();
 
                         async move {
+                            let shell = Shell::new(proxy.clone());
+
                             let mut compositor =
-                                <P::Renderer as compositor::Default>::Compositor::new(graphics_settings, window).await;
+                                <P::Renderer as compositor::Default>::Compositor::new(
+                                    graphics_settings,
+                                    display_handle,
+                                    window,
+                                    shell,
+                                ).await;
 
                             if let Ok(compositor) = &mut compositor {
                                 for font in default_fonts {
@@ -691,7 +701,7 @@ async fn run_instance<P>(
                     id,
                     core::Event::Window(window::Event::Opened {
                         position: window.position(),
-                        size: window.size(),
+                        size: window.logical_size(),
                     }),
                 ));
 
@@ -734,19 +744,6 @@ async fn run_instance<P>(
                             );
                         }
                     }
-                    event::Event::PlatformSpecific(
-                        event::PlatformSpecific::MacOS(
-                            event::MacOS::ReceivedUrl(url),
-                        ),
-                    ) => {
-                        runtime.broadcast(
-                            subscription::Event::PlatformSpecific(
-                                subscription::PlatformSpecific::MacOS(
-                                    subscription::MacOS::ReceivedUrl(url),
-                                ),
-                            ),
-                        );
-                    }
                     event::Event::UserEvent(action) => {
                         run_action(
                             action,
@@ -770,47 +767,48 @@ async fn run_instance<P>(
                         event: event::WindowEvent::RedrawRequested,
                         ..
                     } => {
-                        let Some(compositor) = &mut compositor else {
+                        let Some(mut current_compositor) = compositor.as_mut()
+                        else {
                             continue;
                         };
 
-                        let Some((id, window)) =
+                        let Some((id, mut window)) =
                             window_manager.get_mut_alias(id)
                         else {
                             continue;
                         };
 
                         let physical_size = window.state.physical_size();
+                        let mut logical_size = window.state.logical_size();
 
                         if physical_size.width == 0 || physical_size.height == 0
                         {
                             continue;
                         }
 
-                        if window.viewport_version
-                            != window.state.viewport_version()
+                        // Window was resized between redraws
+                        if window.surface_version
+                            != window.state.surface_version()
                         {
-                            let logical_size = window.state.logical_size();
-
-                            let layout_span = debug::layout(id);
                             let ui = user_interfaces
                                 .remove(&id)
                                 .expect("Remove user interface");
 
+                            let layout_span = debug::layout(id);
                             let _ = user_interfaces.insert(
                                 id,
                                 ui.relayout(logical_size, &mut window.renderer),
                             );
                             layout_span.finish();
 
-                            compositor.configure_surface(
+                            current_compositor.configure_surface(
                                 &mut window.surface,
                                 physical_size.width,
                                 physical_size.height,
                             );
 
-                            window.viewport_version =
-                                window.state.viewport_version();
+                            window.surface_version =
+                                window.state.surface_version();
                         }
 
                         let redraw_event = core::Event::Window(
@@ -819,20 +817,137 @@ async fn run_instance<P>(
 
                         let cursor = window.state.cursor();
 
-                        let ui = user_interfaces
+                        let mut interface = user_interfaces
                             .get_mut(&id)
                             .expect("Get user interface");
 
-                        let draw_span = debug::draw(id);
-                        let (ui_state, _) = ui.update(
-                            slice::from_ref(&redraw_event),
-                            cursor,
-                            &mut window.renderer,
-                            &mut clipboard,
-                            &mut messages,
-                        );
+                        let interact_span = debug::interact(id);
+                        let mut redraw_count = 0;
 
-                        ui.draw(
+                        let state = loop {
+                            let message_count = messages.len();
+                            let (state, _) = interface.update(
+                                slice::from_ref(&redraw_event),
+                                cursor,
+                                &mut window.renderer,
+                                &mut clipboard,
+                                &mut messages,
+                            );
+
+                            if message_count == messages.len()
+                                && !state.has_layout_changed()
+                            {
+                                break state;
+                            }
+
+                            if redraw_count >= 2 {
+                                log::warn!(
+                                    "More than 3 consecutive RedrawRequested events \
+                                    produced layout invalidation"
+                                );
+
+                                break state;
+                            }
+
+                            redraw_count += 1;
+
+                            if !messages.is_empty() {
+                                let caches: FxHashMap<_, _> =
+                                    ManuallyDrop::into_inner(user_interfaces)
+                                        .into_iter()
+                                        .map(|(id, interface)| {
+                                            (id, interface.into_cache())
+                                        })
+                                        .collect();
+
+                                let actions = update(
+                                    &mut program,
+                                    &mut runtime,
+                                    &mut messages,
+                                );
+
+                                user_interfaces =
+                                    ManuallyDrop::new(build_user_interfaces(
+                                        &program,
+                                        &mut window_manager,
+                                        caches,
+                                    ));
+
+                                for action in actions {
+                                    // Defer all window actions to avoid compositor
+                                    // race conditions while redrawing
+                                    if let Action::Window(_) = action {
+                                        proxy.send_action(action);
+                                        continue;
+                                    }
+
+                                    run_action(
+                                        action,
+                                        &program,
+                                        &mut runtime,
+                                        &mut compositor,
+                                        &mut events,
+                                        &mut messages,
+                                        &mut clipboard,
+                                        &mut control_sender,
+                                        &mut user_interfaces,
+                                        &mut window_manager,
+                                        &mut ui_caches,
+                                        &mut is_window_opening,
+                                        &mut system_theme,
+                                    );
+                                }
+
+                                for (window_id, window) in
+                                    window_manager.iter_mut()
+                                {
+                                    // We are already redrawing this window
+                                    if window_id == id {
+                                        continue;
+                                    }
+
+                                    window.raw.request_redraw();
+                                }
+
+                                let Some(next_compositor) = compositor.as_mut()
+                                else {
+                                    continue 'next_event;
+                                };
+
+                                current_compositor = next_compositor;
+                                window = window_manager.get_mut(id).unwrap();
+
+                                // Window scale factor changed during a redraw request
+                                if logical_size != window.state.logical_size() {
+                                    logical_size = window.state.logical_size();
+
+                                    log::debug!(
+                                        "Window scale factor changed during a redraw request"
+                                    );
+
+                                    let ui = user_interfaces
+                                        .remove(&id)
+                                        .expect("Remove user interface");
+
+                                    let layout_span = debug::layout(id);
+                                    let _ = user_interfaces.insert(
+                                        id,
+                                        ui.relayout(
+                                            logical_size,
+                                            &mut window.renderer,
+                                        ),
+                                    );
+                                    layout_span.finish();
+                                }
+
+                                interface =
+                                    user_interfaces.get_mut(&id).unwrap();
+                            }
+                        };
+                        interact_span.finish();
+
+                        let draw_span = debug::draw(id);
+                        interface.draw(
                             &mut window.renderer,
                             window.state.theme(),
                             &renderer::Style {
@@ -842,27 +957,28 @@ async fn run_instance<P>(
                         );
                         draw_span.finish();
 
-                        runtime.broadcast(subscription::Event::Interaction {
-                            window: id,
-                            event: redraw_event,
-                            status: core::event::Status::Ignored,
-                        });
-
                         if let user_interface::State::Updated {
                             redraw_request,
                             input_method,
                             mouse_interaction,
-                        } = ui_state
+                            ..
+                        } = state
                         {
                             window.request_redraw(redraw_request);
                             window.request_input_method(input_method);
                             window.update_mouse(mouse_interaction);
                         }
 
+                        runtime.broadcast(subscription::Event::Interaction {
+                            window: id,
+                            event: redraw_event,
+                            status: core::event::Status::Ignored,
+                        });
+
                         window.draw_preedit();
 
                         let present_span = debug::present(id);
-                        match compositor.present(
+                        match current_compositor.present(
                             &mut window.renderer,
                             &mut window.surface,
                             window.state.viewport(),
@@ -873,9 +989,34 @@ async fn run_instance<P>(
                                 present_span.finish();
                             }
                             Err(error) => match error {
-                                // This is an unrecoverable error.
                                 compositor::SurfaceError::OutOfMemory => {
+                                    // This is an unrecoverable error.
                                     panic!("{error:?}");
+                                }
+                                compositor::SurfaceError::Outdated
+                                | compositor::SurfaceError::Lost => {
+                                    present_span.finish();
+
+                                    // Reconfigure surface and try redrawing
+                                    let physical_size =
+                                        window.state.physical_size();
+
+                                    if error == compositor::SurfaceError::Lost {
+                                        window.surface = current_compositor
+                                            .create_surface(
+                                                window.raw.clone(),
+                                                physical_size.width,
+                                                physical_size.height,
+                                            );
+                                    } else {
+                                        current_compositor.configure_surface(
+                                            &mut window.surface,
+                                            physical_size.width,
+                                            physical_size.height,
+                                        );
+                                    }
+
+                                    window.raw.request_redraw();
                                 }
                                 _ => {
                                     present_span.finish();
@@ -1071,31 +1212,17 @@ async fn run_instance<P>(
                         }
 
                         if !messages.is_empty() || uis_stale {
-                            let cached_interfaces: FxHashMap<
-                                window::Id,
-                                user_interface::Cache,
-                            > = ManuallyDrop::into_inner(user_interfaces)
-                                .drain()
-                                .map(|(id, ui)| (id, ui.into_cache()))
-                                .collect();
+                            let cached_interfaces: FxHashMap<_, _> =
+                                ManuallyDrop::into_inner(user_interfaces)
+                                    .into_iter()
+                                    .map(|(id, ui)| (id, ui.into_cache()))
+                                    .collect();
 
-                            update(&mut program, &mut runtime, &mut messages);
-
-                            for (id, window) in window_manager.iter_mut() {
-                                window.state.synchronize(
-                                    &program,
-                                    id,
-                                    &window.raw,
-                                );
-
-                                window.raw.request_redraw();
-                            }
-
-                            debug::theme_changed(|| {
-                                window_manager.first().and_then(|window| {
-                                    theme::Base::palette(window.state.theme())
-                                })
-                            });
+                            let actions = update(
+                                &mut program,
+                                &mut runtime,
+                                &mut messages,
+                            );
 
                             user_interfaces =
                                 ManuallyDrop::new(build_user_interfaces(
@@ -1103,6 +1230,28 @@ async fn run_instance<P>(
                                     &mut window_manager,
                                     cached_interfaces,
                                 ));
+
+                            for action in actions {
+                                run_action(
+                                    action,
+                                    &program,
+                                    &mut runtime,
+                                    &mut compositor,
+                                    &mut events,
+                                    &mut messages,
+                                    &mut clipboard,
+                                    &mut control_sender,
+                                    &mut user_interfaces,
+                                    &mut window_manager,
+                                    &mut ui_caches,
+                                    &mut is_window_opening,
+                                    &mut system_theme,
+                                );
+                            }
+
+                            for (_id, window) in window_manager.iter_mut() {
+                                window.raw.request_redraw();
+                            }
                         }
 
                         if let Some(redraw_at) = window_manager.redraw_at() {
@@ -1152,14 +1301,36 @@ fn update<P: Program, E: Executor>(
     program: &mut program::Instance<P>,
     runtime: &mut Runtime<E, Proxy<P::Message>, Action<P::Message>>,
     messages: &mut Vec<P::Message>,
-) where
+) -> Vec<Action<P::Message>>
+where
     P::Theme: theme::Base,
 {
+    use futures::futures;
+
+    let mut actions = Vec::new();
+
     for message in messages.drain(..) {
         let task = runtime.enter(|| program.update(message));
 
-        if let Some(stream) = runtime::task::into_stream(task) {
-            runtime.run(stream);
+        if let Some(mut stream) = runtime::task::into_stream(task) {
+            let waker = futures::task::noop_waker_ref();
+            let mut context = futures::task::Context::from_waker(waker);
+
+            // Run immediately available actions synchronously (e.g. widget operations)
+            loop {
+                match runtime.enter(|| stream.poll_next_unpin(&mut context)) {
+                    futures::task::Poll::Ready(Some(action)) => {
+                        actions.push(action);
+                    }
+                    futures::task::Poll::Ready(None) => {
+                        break;
+                    }
+                    futures::task::Poll::Pending => {
+                        runtime.run(stream);
+                        break;
+                    }
+                }
+            }
         }
     }
 
@@ -1167,6 +1338,8 @@ fn update<P: Program, E: Executor>(
     let recipes = subscription::into_recipes(subscription.map(Action::Output));
 
     runtime.track(recipes);
+
+    actions
 }
 
 fn run_action<'a, P, C>(
@@ -1329,11 +1502,7 @@ fn run_action<'a, P, C>(
             }
             window::Action::GetSize(id, channel) => {
                 if let Some(window) = window_manager.get_mut(id) {
-                    let size = window
-                        .raw
-                        .inner_size()
-                        .to_logical(f64::from(window.state.scale_factor()));
-
+                    let size = window.logical_size();
                     let _ = channel.send(Size::new(size.width, size.height));
                 }
             }
@@ -1460,14 +1629,9 @@ fn run_action<'a, P, C>(
                     let _ = channel.send(window.raw.id().into());
                 }
             }
-            window::Action::RunWithHandle(id, f) => {
-                use window::raw_window_handle::HasWindowHandle;
-
-                if let Some(handle) = window_manager
-                    .get_mut(id)
-                    .and_then(|window| window.raw.window_handle().ok())
-                {
-                    f(handle);
+            window::Action::Run(id, f) => {
+                if let Some(window) = window_manager.get_mut(id) {
+                    f(window);
                 }
             }
             window::Action::Screenshot(id, channel) => {
@@ -1483,7 +1647,7 @@ fn run_action<'a, P, C>(
                     let _ = channel.send(core::window::Screenshot::new(
                         bytes,
                         window.state.physical_size(),
-                        window.state.viewport().scale_factor(),
+                        window.state.scale_factor(),
                     ));
                 }
             }
@@ -1495,6 +1659,43 @@ fn run_action<'a, P, C>(
             window::Action::DisableMousePassthrough(id) => {
                 if let Some(window) = window_manager.get_mut(id) {
                     let _ = window.raw.set_cursor_hittest(true);
+                }
+            }
+            window::Action::GetMonitorSize(id, channel) => {
+                if let Some(window) = window_manager.get(id) {
+                    let size = window.raw.current_monitor().map(|monitor| {
+                        let scale = window.state.scale_factor();
+                        let size = monitor.size().to_logical(f64::from(scale));
+
+                        Size::new(size.width, size.height)
+                    });
+
+                    let _ = channel.send(size);
+                }
+            }
+            window::Action::SetAllowAutomaticTabbing(enabled) => {
+                control_sender
+                    .start_send(Control::SetAutomaticWindowTabbing(enabled))
+                    .expect("Send control action");
+            }
+            window::Action::RedrawAll => {
+                for (_id, window) in window_manager.iter_mut() {
+                    window.raw.request_redraw();
+                }
+            }
+            window::Action::RelayoutAll => {
+                for (id, window) in window_manager.iter_mut() {
+                    if let Some(ui) = interfaces.remove(&id) {
+                        let _ = interfaces.insert(
+                            id,
+                            ui.relayout(
+                                window.state.logical_size(),
+                                &mut window.renderer,
+                            ),
+                        );
+                    }
+
+                    window.raw.request_redraw();
                 }
             }
         },
@@ -1557,6 +1758,21 @@ fn run_action<'a, P, C>(
                 }
             }
         }
+        Action::Image(action) => match action {
+            image::Action::Allocate(handle, sender) => {
+                use core::Renderer as _;
+
+                // TODO: Shared image cache in compositor
+                if let Some((_id, window)) = window_manager.iter_mut().next() {
+                    window.renderer.allocate_image(
+                        &handle,
+                        move |allocation| {
+                            let _ = sender.send(allocation);
+                        },
+                    );
+                }
+            }
+        },
         Action::LoadFont { bytes, channel } => {
             if let Some(compositor) = compositor {
                 // TODO: Error handling (?)
@@ -1572,7 +1788,7 @@ fn run_action<'a, P, C>(
                 };
 
                 let cache = ui.into_cache();
-                let size = window.size();
+                let size = window.logical_size();
 
                 let _ = interfaces.insert(
                     id,
@@ -1606,6 +1822,16 @@ where
     C: Compositor<Renderer = P::Renderer>,
     P::Theme: theme::Base,
 {
+    for (id, window) in window_manager.iter_mut() {
+        window.state.synchronize(program, id, &window.raw);
+    }
+
+    debug::theme_changed(|| {
+        window_manager
+            .first()
+            .and_then(|window| theme::Base::palette(window.state.theme()))
+    });
+
     cached_user_interfaces
         .drain()
         .filter_map(|(id, cache)| {

@@ -428,7 +428,10 @@ where
             + alignment_offset;
 
         InputMethod::Enabled {
-            position: Point::new(x, text_bounds.y + text_bounds.height),
+            cursor: Rectangle::new(
+                Point::new(x, text_bounds.y),
+                Size::new(1.0, text_bounds.height),
+            ),
             purpose: if self.is_secure {
                 input_method::Purpose::Secure
             } else {
@@ -780,11 +783,14 @@ where
                             } else {
                                 state.cursor.move_to(position);
                             }
-                            state.is_dragging = true;
+
+                            state.is_dragging = Some(Drag::Select);
                         }
                         click::Kind::Double => {
                             if self.is_secure {
                                 state.cursor.select_all(&self.value);
+
+                                state.is_dragging = None;
                             } else {
                                 let position = find_cursor_position(
                                     text_layout.bounds(),
@@ -798,13 +804,15 @@ where
                                     self.value.previous_start_of_word(position),
                                     self.value.next_end_of_word(position),
                                 );
-                            }
 
-                            state.is_dragging = false;
+                                state.is_dragging = Some(Drag::SelectWords {
+                                    anchor: position,
+                                });
+                            }
                         }
                         click::Kind::Triple => {
                             state.cursor.select_all(&self.value);
-                            state.is_dragging = false;
+                            state.is_dragging = None;
                         }
                     }
 
@@ -820,13 +828,13 @@ where
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
             | Event::Touch(touch::Event::FingerLifted { .. })
             | Event::Touch(touch::Event::FingerLost { .. }) => {
-                state::<Renderer>(tree).is_dragging = false;
+                state::<Renderer>(tree).is_dragging = None;
             }
             Event::Mouse(mouse::Event::CursorMoved { position })
             | Event::Touch(touch::Event::FingerMoved { position, .. }) => {
                 let state = state::<Renderer>(tree);
 
-                if state.is_dragging {
+                if let Some(is_dragging) = &state.is_dragging {
                     let text_layout = layout.children().next().unwrap();
 
                     let target = {
@@ -857,9 +865,27 @@ where
 
                     let selection_before = state.cursor.selection(&value);
 
-                    state
-                        .cursor
-                        .select_range(state.cursor.start(&value), position);
+                    match is_dragging {
+                        Drag::Select => {
+                            state.cursor.select_range(
+                                state.cursor.start(&value),
+                                position,
+                            );
+                        }
+                        Drag::SelectWords { anchor } => {
+                            if position < *anchor {
+                                state.cursor.select_range(
+                                    self.value.previous_start_of_word(position),
+                                    self.value.next_end_of_word(*anchor),
+                                );
+                            } else {
+                                state.cursor.select_range(
+                                    self.value.previous_start_of_word(*anchor),
+                                    self.value.next_end_of_word(position),
+                                );
+                            }
+                        }
+                    }
 
                     if let Some(focus) = &mut state.is_focused {
                         focus.updated_at = Instant::now();
@@ -873,15 +899,19 @@ where
                 }
             }
             Event::Keyboard(keyboard::Event::KeyPressed {
-                key, text, ..
+                key,
+                text,
+                modified_key,
+                physical_key,
+                ..
             }) => {
                 let state = state::<Renderer>(tree);
 
                 if let Some(focus) = &mut state.is_focused {
                     let modifiers = state.keyboard_modifiers;
 
-                    match key.as_ref() {
-                        keyboard::Key::Character("c")
+                    match key.to_latin(*physical_key) {
+                        Some('c')
                             if state.keyboard_modifiers.command()
                                 && !self.is_secure =>
                         {
@@ -897,7 +927,7 @@ where
                             shell.capture_event();
                             return;
                         }
-                        keyboard::Key::Character("x")
+                        Some('x')
                             if state.keyboard_modifiers.command()
                                 && !self.is_secure =>
                         {
@@ -926,7 +956,7 @@ where
                             update_cache(state, &self.value);
                             return;
                         }
-                        keyboard::Key::Character("v")
+                        Some('v')
                             if state.keyboard_modifiers.command()
                                 && !state.keyboard_modifiers.alt() =>
                         {
@@ -965,9 +995,7 @@ where
                             update_cache(state, &self.value);
                             return;
                         }
-                        keyboard::Key::Character("a")
-                            if state.keyboard_modifiers.command() =>
-                        {
+                        Some('a') if state.keyboard_modifiers.command() => {
                             let cursor_before = state.cursor;
 
                             state.cursor.select_all(&self.value);
@@ -1009,7 +1037,17 @@ where
                         }
                     }
 
-                    match key.as_ref() {
+                    #[cfg(target_os = "macos")]
+                    let macos_shortcut =
+                        crate::text_editor::convert_macos_shortcut(
+                            key, modifiers,
+                        );
+
+                    #[cfg(target_os = "macos")]
+                    let modified_key =
+                        macos_shortcut.as_ref().unwrap_or(modified_key);
+
+                    match modified_key.as_ref() {
                         keyboard::Key::Named(key::Named::Enter) => {
                             if let Some(on_submit) = self.on_submit.clone() {
                                 shell.publish(on_submit);
@@ -1021,14 +1059,15 @@ where
                                 return;
                             };
 
-                            if modifiers.jump()
-                                && state.cursor.selection(&self.value).is_none()
-                            {
-                                if self.is_secure {
-                                    let cursor_pos =
-                                        state.cursor.end(&self.value);
-                                    state.cursor.select_range(0, cursor_pos);
-                                } else {
+                            if state.cursor.selection(&self.value).is_none() {
+                                if (self.is_secure && modifiers.jump())
+                                    || modifiers.macos_command()
+                                {
+                                    state.cursor.select_range(
+                                        state.cursor.start(&self.value),
+                                        0,
+                                    );
+                                } else if modifiers.jump() {
                                     state
                                         .cursor
                                         .select_left_by_words(&self.value);
@@ -1051,17 +1090,15 @@ where
                                 return;
                             };
 
-                            if modifiers.jump()
-                                && state.cursor.selection(&self.value).is_none()
-                            {
-                                if self.is_secure {
-                                    let cursor_pos =
-                                        state.cursor.end(&self.value);
+                            if state.cursor.selection(&self.value).is_none() {
+                                if (self.is_secure && modifiers.jump())
+                                    || modifiers.macos_command()
+                                {
                                     state.cursor.select_range(
-                                        cursor_pos,
+                                        state.cursor.start(&self.value),
                                         self.value.len(),
                                     );
-                                } else {
+                                } else if modifiers.jump() {
                                     state
                                         .cursor
                                         .select_right_by_words(&self.value);
@@ -1119,54 +1156,21 @@ where
 
                             shell.capture_event();
                         }
-                        keyboard::Key::Named(key::Named::ArrowLeft)
-                            if modifiers.macos_command() =>
-                        {
-                            let cursor_before = state.cursor;
-
-                            if modifiers.shift() {
-                                state.cursor.select_range(
-                                    state.cursor.start(&self.value),
-                                    0,
-                                );
-                            } else {
-                                state.cursor.move_to(0);
-                            }
-
-                            if cursor_before != state.cursor {
-                                focus.updated_at = Instant::now();
-
-                                shell.request_redraw();
-                            }
-
-                            shell.capture_event();
-                        }
-                        keyboard::Key::Named(key::Named::ArrowRight)
-                            if modifiers.macos_command() =>
-                        {
-                            let cursor_before = state.cursor;
-
-                            if modifiers.shift() {
-                                state.cursor.select_range(
-                                    state.cursor.start(&self.value),
-                                    self.value.len(),
-                                );
-                            } else {
-                                state.cursor.move_to(self.value.len());
-                            }
-
-                            if cursor_before != state.cursor {
-                                focus.updated_at = Instant::now();
-
-                                shell.request_redraw();
-                            }
-
-                            shell.capture_event();
-                        }
                         keyboard::Key::Named(key::Named::ArrowLeft) => {
                             let cursor_before = state.cursor;
 
-                            if modifiers.jump() && !self.is_secure {
+                            if (self.is_secure && modifiers.jump())
+                                || modifiers.macos_command()
+                            {
+                                if modifiers.shift() {
+                                    state.cursor.select_range(
+                                        state.cursor.start(&self.value),
+                                        0,
+                                    );
+                                } else {
+                                    state.cursor.move_to(0);
+                                }
+                            } else if modifiers.jump() {
                                 if modifiers.shift() {
                                     state
                                         .cursor
@@ -1193,7 +1197,18 @@ where
                         keyboard::Key::Named(key::Named::ArrowRight) => {
                             let cursor_before = state.cursor;
 
-                            if modifiers.jump() && !self.is_secure {
+                            if (self.is_secure && modifiers.jump())
+                                || modifiers.macos_command()
+                            {
+                                if modifiers.shift() {
+                                    state.cursor.select_range(
+                                        state.cursor.start(&self.value),
+                                        self.value.len(),
+                                    );
+                                } else {
+                                    state.cursor.move_to(self.value.len());
+                                }
+                            } else if modifiers.jump() {
                                 if modifiers.shift() {
                                     state
                                         .cursor
@@ -1219,7 +1234,7 @@ where
                         }
                         keyboard::Key::Named(key::Named::Escape) => {
                             state.is_focused = None;
-                            state.is_dragging = false;
+                            state.is_dragging = None;
                             state.is_pasting = None;
 
                             state.keyboard_modifiers =
@@ -1385,7 +1400,7 @@ where
 
     fn mouse_interaction(
         &self,
-        _state: &Tree,
+        _tree: &Tree,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         _viewport: &Rectangle,
@@ -1448,7 +1463,7 @@ pub struct State<P: text::Paragraph> {
     placeholder: paragraph::Plain<P>,
     icon: paragraph::Plain<P>,
     is_focused: Option<Focus>,
-    is_dragging: bool,
+    is_dragging: Option<Drag>,
     is_pasting: Option<Value>,
     preedit: Option<input_method::Preedit>,
     last_click: Option<mouse::Click>,
@@ -1468,6 +1483,12 @@ struct Focus {
     updated_at: Instant,
     now: Instant,
     is_window_focused: bool,
+}
+
+#[derive(Debug, Clone)]
+enum Drag {
+    Select,
+    SelectWords { anchor: usize },
 }
 
 impl<P: text::Paragraph> State<P> {
@@ -1523,6 +1544,11 @@ impl<P: text::Paragraph> State<P> {
     pub fn select_all(&mut self) {
         self.cursor.select_range(0, usize::MAX);
     }
+
+    /// Selects the given range of the content of the [`TextInput`].
+    pub fn select_range(&mut self, start: usize, end: usize) {
+        self.cursor.select_range(start, end);
+    }
 }
 
 impl<P: text::Paragraph> operation::Focusable for State<P> {
@@ -1562,6 +1588,10 @@ impl<P: text::Paragraph> operation::TextInput for State<P> {
 
     fn select_all(&mut self) {
         State::select_all(self);
+    }
+
+    fn select_range(&mut self, start: usize, end: usize) {
+        State::select_range(self, start, end);
     }
 }
 

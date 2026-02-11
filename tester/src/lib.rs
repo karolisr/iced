@@ -16,6 +16,7 @@ use crate::core::Length::Fill;
 use crate::core::alignment::Horizontal::Right;
 use crate::core::border;
 use crate::core::mouse;
+use crate::core::theme;
 use crate::core::window;
 use crate::core::{Color, Element, Font, Settings, Size, Theme};
 use crate::futures::futures::channel::mpsc;
@@ -65,10 +66,15 @@ where
     }
 
     fn window(&self) -> Option<window::Settings> {
-        self.program.window().map(|window| window::Settings {
-            size: window.size + Size::new(300.0, 80.0),
-            ..window
-        })
+        Some(
+            self.program
+                .window()
+                .map(|window| window::Settings {
+                    size: window.size + Size::new(300.0, 80.0),
+                    ..window
+                })
+                .unwrap_or_default(),
+        )
     }
 
     fn boot(&self) -> (Self::State, Task<Self::Message>) {
@@ -89,6 +95,14 @@ where
         window: window::Id,
     ) -> Element<'a, Self::Message, Self::Theme, Self::Renderer> {
         state.view(&self.program, window).map(Message)
+    }
+
+    fn theme(&self, state: &Self::State, window: window::Id) -> Option<Theme> {
+        state
+            .theme(&self.program, window)
+            .as_ref()
+            .and_then(theme::Base::palette)
+            .map(|palette| Theme::custom("Tester", palette))
     }
 }
 
@@ -394,6 +408,19 @@ impl<P: Program + 'static> Tester<P> {
         self.edit = None;
     }
 
+    fn theme(&self, program: &P, window: window::Id) -> Option<P::Theme> {
+        match &self.state {
+            State::Empty => None,
+            State::Idle { state } => program.theme(state, window),
+            State::Recording { emulator } | State::Playing { emulator, .. } => {
+                emulator.theme(program)
+            }
+            State::Asserting { state, window, .. } => {
+                program.theme(state, *window)
+            }
+        }
+    }
+
     fn preset<'a>(
         &self,
         program: &'a P,
@@ -575,45 +602,31 @@ impl<P: Program + 'static> Tester<P> {
                 })
         };
 
+        let view = match &self.state {
+            State::Empty => Element::from(space()),
+            State::Idle { state } => {
+                program.view(state, window).map(Tick::Program)
+            }
+            State::Recording { emulator } => {
+                recorder(emulator.view(program).map(Tick::Program))
+                    .on_record(Tick::Record)
+                    .into()
+            }
+            State::Asserting { state, window, .. } => {
+                recorder(program.view(state, *window).map(Tick::Program))
+                    .on_record(Tick::Assert)
+                    .into()
+            }
+            State::Playing { emulator, .. } => {
+                emulator.view(program).map(Tick::Program)
+            }
+        };
+
         let viewport = container(
             scrollable(
-                container(match &self.state {
-                    State::Empty => Element::from(space()),
-                    State::Idle { state } => {
-                        let theme = program.theme(state, window);
-
-                        themer(
-                            theme,
-                            program.view(state, window).map(Tick::Program),
-                        )
-                        .into()
-                    }
-                    State::Recording { emulator } => {
-                        let theme = emulator.theme(program);
-                        let view = emulator.view(program).map(Tick::Program);
-
-                        recorder(themer(theme, view))
-                            .on_record(Tick::Record)
-                            .into()
-                    }
-                    State::Asserting { state, window, .. } => {
-                        let theme = program.theme(state, *window);
-                        let view =
-                            program.view(state, *window).map(Tick::Program);
-
-                        recorder(themer(theme, view))
-                            .on_record(Tick::Assert)
-                            .into()
-                    }
-                    State::Playing { emulator, .. } => {
-                        let theme = emulator.theme(program);
-                        let view = emulator.view(program).map(Tick::Program);
-
-                        themer(theme, view).into()
-                    }
-                })
-                .width(self.viewport.width)
-                .height(self.viewport.height),
+                container(themer(self.theme(program, window), view))
+                    .width(self.viewport.width)
+                    .height(self.viewport.height),
             )
             .direction(scrollable::Direction::Both {
                 vertical: scrollable::Scrollbar::default(),

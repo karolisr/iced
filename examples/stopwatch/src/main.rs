@@ -1,12 +1,11 @@
 use iced::keyboard;
 use iced::time::{self, Duration, Instant, milliseconds};
 use iced::widget::{button, center, column, row, text};
-use iced::{Center, Element, Subscription, Theme};
+use iced::{Center, Element, Subscription};
 
 pub fn main() -> iced::Result {
     iced::application(Stopwatch::default, Stopwatch::update, Stopwatch::view)
         .subscription(Stopwatch::subscription)
-        .theme(Stopwatch::theme)
         .run()
 }
 
@@ -65,13 +64,14 @@ impl Stopwatch {
             }
         };
 
-        fn handle_hotkey(
-            key: keyboard::Key,
-            _modifiers: keyboard::Modifiers,
-        ) -> Option<Message> {
+        fn handle_hotkey(event: keyboard::Event) -> Option<Message> {
             use keyboard::key;
 
-            match key.as_ref() {
+            let keyboard::Event::KeyPressed { modified_key, .. } = event else {
+                return None;
+            };
+
+            match modified_key.as_ref() {
                 keyboard::Key::Named(key::Named::Space) => {
                     Some(Message::Toggle)
                 }
@@ -80,7 +80,10 @@ impl Stopwatch {
             }
         }
 
-        Subscription::batch(vec![tick, keyboard::on_key_press(handle_hotkey)])
+        Subscription::batch(vec![
+            tick,
+            keyboard::listen().filter_map(handle_hotkey),
+        ])
     }
 
     fn view(&self) -> Element<'_, Message> {
@@ -119,9 +122,5 @@ impl Stopwatch {
         let content = column![duration, controls].align_x(Center).spacing(20);
 
         center(content).into()
-    }
-
-    fn theme(&self) -> Theme {
-        Theme::Dark
     }
 }
