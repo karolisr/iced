@@ -962,7 +962,7 @@ where
                                 Interaction::TouchScrolling(cursor_position);
 
                             // TODO: bubble up touch movements if not consumed.
-                            should_notify_viewport = !otify_scroll(
+                            should_notify_viewport = !notify_scroll(
                                 state,
                                 &self.on_scroll,
                                 bounds,
