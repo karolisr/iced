@@ -616,6 +616,7 @@ where
             }
         }
 
+        let mut should_notify_viewport: bool = true;
         let mut update = || {
             if let Some(scroller_grabbed_at) = state.y_scroller_grabbed_at() {
                 match event {
@@ -637,7 +638,7 @@ where
                                 content_bounds,
                             );
 
-                            let _ = notify_scroll(
+                            should_notify_viewport = !notify_scroll(
                                 state,
                                 &self.on_scroll,
                                 bounds,
@@ -677,7 +678,7 @@ where
                                 scroller_grabbed_at,
                             );
 
-                            let _ = notify_scroll(
+                            should_notify_viewport = !notify_scroll(
                                 state,
                                 &self.on_scroll,
                                 bounds,
@@ -711,7 +712,7 @@ where
                                 content_bounds,
                             );
 
-                            let _ = notify_scroll(
+                            should_notify_viewport = !notify_scroll(
                                 state,
                                 &self.on_scroll,
                                 bounds,
@@ -751,7 +752,7 @@ where
                                 scroller_grabbed_at,
                             );
 
-                            let _ = notify_scroll(
+                            should_notify_viewport = !notify_scroll(
                                 state,
                                 &self.on_scroll,
                                 bounds,
@@ -890,6 +891,7 @@ where
                         content_bounds,
                         shell,
                     );
+                    should_notify_viewport = !has_scrolled;
 
                     let in_transaction = state.last_scrolled.is_some();
 
@@ -960,7 +962,7 @@ where
                                 Interaction::TouchScrolling(cursor_position);
 
                             // TODO: bubble up touch movements if not consumed.
-                            let _ = notify_scroll(
+                            should_notify_viewport = !otify_scroll(
                                 state,
                                 &self.on_scroll,
                                 bounds,
@@ -1081,7 +1083,7 @@ where
                         }
                     }
 
-                    let _ = notify_viewport(
+                    should_notify_viewport = !notify_viewport(
                         state,
                         &self.on_scroll,
                         bounds,
@@ -1090,6 +1092,20 @@ where
                     );
                 }
                 _ => {}
+            }
+
+            if state.last_notified.is_none() {
+                should_notify_viewport = true;
+            }
+
+            if should_notify_viewport {
+                let _ = notify_viewport(
+                    state,
+                    &self.on_scroll,
+                    bounds,
+                    content_bounds,
+                    shell,
+                );
             }
         };
 
