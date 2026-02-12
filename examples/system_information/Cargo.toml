@@ -9,4 +9,4 @@ publish = false
 iced.workspace = true
 iced.features = ["sysinfo"]
 
-bytesize = "1.1"
+bytesize = "1.3"
