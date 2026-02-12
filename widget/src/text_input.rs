@@ -1009,7 +1009,11 @@ where
                             shell.capture_event();
                             return;
                         }
-                        _ => {}
+                        _ => {
+                            if state.keyboard_modifiers.command() {
+                                return;
+                            }
+                        }
                     }
 
                     if let Some(text) = text {
