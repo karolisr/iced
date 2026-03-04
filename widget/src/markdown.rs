@@ -1502,7 +1502,7 @@ where
     let table = table(
         columns.iter().enumerate().map(move |(i, column)| {
             table::column(
-                items(viewer, settings, &column.header),
+                Some(items(viewer, settings, &column.header)),
                 move |row: &Row| {
                     if let Some(cells) = row.cells.get(i) {
                         items(viewer, settings, cells)
