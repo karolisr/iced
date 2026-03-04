@@ -10,6 +10,7 @@ use crate::core::{
     Alignment, Background, Element, Layout, Length, Pixels, Rectangle, Size,
     Widget,
 };
+use crate::space;
 
 /// Creates a new [`Table`] with the given columns and rows.
 ///
@@ -32,7 +33,7 @@ where
 /// The view function will be called for each row in a [`Table`] and it must
 /// produce the resulting contents of a cell.
 pub fn column<'a, 'b, T, E, Message, Theme, Renderer>(
-    header: impl Into<Element<'a, Message, Theme, Renderer>>,
+    header: Option<impl Into<Element<'a, Message, Theme, Renderer>>>,
     view: impl Fn(T) -> E + 'b,
 ) -> Column<'a, 'b, T, Message, Theme, Renderer>
 where
@@ -40,7 +41,7 @@ where
     E: Into<Element<'a, Message, Theme, Renderer>>,
 {
     Column {
-        header: header.into(),
+        header: header.map(std::convert::Into::into),
         view: Box::new(move |data| view(data).into()),
         width: Length::Shrink,
         align_x: alignment::Horizontal::Left,
@@ -88,21 +89,33 @@ where
     where
         T: Clone,
     {
-        let columns = columns.into_iter();
+        let cols_tmp: Vec<_> = columns.into_iter().collect();
+        let has_headers = cols_tmp.iter().clone().any(|c| c.header.is_some());
+        let columns = cols_tmp.into_iter();
         let rows = rows.into_iter();
 
         let mut width = Length::Shrink;
         let mut height = Length::Shrink;
 
         let mut cells = Vec::with_capacity(
-            columns.size_hint().0 * (1 + rows.size_hint().0),
+            columns.size_hint().0
+                * (match has_headers {
+                    true => 1,
+                    false => 0,
+                } + rows.size_hint().0),
         );
 
         let (mut columns, views): (Vec<_>, Vec<_>) = columns
             .map(|column| {
                 width = width.enclose(column.width);
 
-                cells.push(column.header);
+                if has_headers {
+                    if let Some(header) = column.header {
+                        cells.push(header);
+                    } else {
+                        cells.push(Element::new(space()));
+                    }
+                }
 
                 (
                     Column_ {
@@ -636,7 +649,7 @@ pub struct Column<
     Theme = crate::Theme,
     Renderer = crate::Renderer,
 > {
-    header: Element<'a, Message, Theme, Renderer>,
+    header: Option<Element<'a, Message, Theme, Renderer>>,
     view: Box<dyn Fn(T) -> Element<'a, Message, Theme, Renderer> + 'b>,
     width: Length,
     align_x: alignment::Horizontal,
