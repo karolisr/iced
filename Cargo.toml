@@ -224,14 +224,14 @@ softbuffer = { version = "0.4", default-features = false }
 sysinfo = "0.33"
 thiserror = "2"
 tiny-skia = { version = "0.11", default-features = false, features = ["std", "simd"] }
-tokio = "1.50"
+tokio = "1.51"
 tracing = "0.1"
 two-face = { version = "0.4", default-features = false, features = ["syntect-default-fancy"] }
-unicode-segmentation = "1.12"
+unicode-segmentation = "1.13"
 url = "2.5"
 wasm-bindgen-futures = "0.4"
 wasmtimer = "0.4.3"
-web-sys = "0.3.91"
+web-sys = "0.3.94"
 web-time = "1.1"
 wgpu = { version = "27.0", default-features = false, features = ["std", "wgsl"] }
 window_clipboard = { version = "0.5", default-features = false }
